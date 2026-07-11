@@ -30,15 +30,19 @@ Production: `npm run build && npm start`
 
 ## Deploy free (Render + Neon + UptimeRobot)
 
-1. **Neon** (database): create a free project at neon.tech → copy the
-   connection string (with `?sslmode=require`).
+1. **Supabase** (database): create a free project → Connect → choose
+   **Session pooler** (NOT "Direct connection" — direct is IPv6-only and
+   unreachable from Render) → copy the URI and replace `[YOUR-PASSWORD]`.
+   If the password has special characters, percent-encode them
+   (e.g. `@` → `%40`). Neon (neon.tech) works the same way if preferred.
 2. **Render** (app): dashboard → *New → Blueprint* → connect this repo
    (`render.yaml` is auto-detected) → set `DATABASE_URL` and a strong
    `ADMIN_PASSWORD` when prompted → deploy. The build pushes the schema,
    seeds the admin and builds the app.
-3. **UptimeRobot** (keep-awake): free monitor → HTTP(s) → your
-   `https://….onrender.com` URL → 5-minute interval. This stops the free
-   instance from sleeping after 15 idle minutes.
+3. **UptimeRobot** (keep-awake): free monitor → HTTP(s) →
+   `https://….onrender.com/api/health` → 5-minute interval. This stops the
+   free Render instance from sleeping AND generates database activity so
+   Supabase's free tier never pauses the project.
 4. **Custom domain**: Render service → Settings → Custom Domains → add
    `funwithu.in` → create the CNAME/A records it shows at your DNS provider.
    TLS certificate is issued automatically.
