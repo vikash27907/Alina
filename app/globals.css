@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #0b0812;
+  color: #f3eefc;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  min-height: 100dvh;
+  background-image: radial-gradient(
+      ellipse 80% 50% at 50% -10%,
+      rgba(139, 92, 246, 0.16),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 90% 110%,
+      rgba(255, 45, 120, 0.1),
+      transparent
+    );
+  background-attachment: fixed;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(255, 45, 120, 0.4);
+}
+
+@layer components {
+  .btn-exotic {
+    @apply bg-exotic text-white font-semibold rounded-2xl px-6 py-3 shadow-glow
+      transition-all duration-300 hover:brightness-110 hover:shadow-glow-violet
+      active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none
+      inline-flex items-center justify-center gap-2 text-center;
+  }
+  .btn-ghost {
+    @apply bg-surface text-mist border border-edge rounded-2xl px-6 py-3
+      transition-all duration-300 hover:text-white hover:border-violet/60
+      active:scale-[0.98] inline-flex items-center justify-center gap-2;
+  }
+  .card {
+    @apply bg-surface/80 backdrop-blur border border-edge rounded-3xl shadow-soft;
+  }
+  .input-dark {
+    @apply w-full bg-ink border border-edge rounded-2xl px-4 py-3 text-white
+      placeholder:text-mist/50 outline-none transition-colors duration-200
+      focus:border-blush/70;
+  }
+  .label {
+    @apply block text-sm text-mist mb-1.5;
+  }
+}
+
+/* smooth everything */
+a,
+button {
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease,
+    opacity 0.2s ease, transform 0.15s ease;
+}
+
+@keyframes float-up {
+  0% {
+    transform: translateY(20px) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-140px) scale(1.4);
+    opacity: 0;
+  }
+}
+.gift-float {
+  animation: float-up 2.2s ease-out forwards;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 45, 120, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 24px rgba(255, 45, 120, 0);
+  }
+}
+.searching-pulse {
+  animation: pulse-ring 1.4s ease-out infinite;
+}

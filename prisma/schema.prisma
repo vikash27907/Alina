@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  name         String
+  role         String        @default("CUSTOMER") // CUSTOMER | MODEL | ADMIN
+  coins        Int           @default(30) // free trial coins on signup
+  createdAt    DateTime      @default(now())
+  modelProfile ModelProfile?
+  transactions Transaction[]
+  customerCalls Call[]       @relation("CustomerCalls")
+}
+
+model ModelProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  country      String
+  dob          String
+  languages    String
+  bio          String   @default("")
+  idDocPath    String
+  selfiePath   String
+  earnings     Int      @default(0) // lifetime earnings, in ₹
+  balance      Int      @default(0) // withdrawable balance, in ₹
+  totalMinutes Int      @default(0)
+  rating       Float    @default(5)
+  createdAt    DateTime @default(now())
+  reviewedAt   DateTime?
+  rejectReason String?
+  payouts      Payout[]
+  calls        Call[]   @relation("ModelCalls")
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // TRIAL | PURCHASE | CALL_SPEND | GIFT_SPEND | EARNING | GIFT_EARNING
+  coins     Int      // positive = credit, negative = debit (customer coins or model ₹)
+  meta      String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model Call {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   User      @relation("CustomerCalls", fields: [customerId], references: [id], onDelete: Cascade)
+  modelId    String
+  model      ModelProfile @relation("ModelCalls", fields: [modelId], references: [id], onDelete: Cascade)
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  seconds    Int       @default(0)
+  coinsSpent Int       @default(0)
+  modelEarn  Int       @default(0)
+  endReason  String    @default("")
+}
+
+model Payout {
+  id             String       @id @default(cuid())
+  modelProfileId String
+  modelProfile   ModelProfile @relation(fields: [modelProfileId], references: [id], onDelete: Cascade)
+  amount         Int          // ₹
+  method         String       // UPI | BANK | PAYPAL | CRYPTO
+  details        String       // UPI id / account info given by the model
+  status         String       @default("PENDING") // PENDING | PAID | REJECTED
+  createdAt      DateTime     @default(now())
+  processedAt    DateTime?
+}
