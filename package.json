@@ -6,8 +6,12 @@
     "dev": "node server.js",
     "build": "prisma generate && next build",
     "start": "NODE_ENV=production node server.js",
-    "setup": "prisma migrate dev --name init && node prisma/seed.js",
-    "seed": "node prisma/seed.js"
+    "setup": "prisma db push && node prisma/seed.js",
+    "seed": "node prisma/seed.js",
+    "deploy:build": "prisma db push && node prisma/seed.js && next build"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -16,14 +16,38 @@ withdraw earnings. Admins review applications and process payouts.
 
 ## Run locally
 
+Requires a PostgreSQL database — a free [Neon](https://neon.tech) project works
+for development too.
+
 ```bash
-cp .env.example .env       # then edit secrets
+cp .env.example .env       # paste your Postgres URL + secrets
 npm install
-npm run setup              # creates DB + seeds the admin account
+npm run setup              # creates tables + seeds the admin account
 npm run dev                # http://localhost:3000
 ```
 
 Production: `npm run build && npm start`
+
+## Deploy free (Render + Neon + UptimeRobot)
+
+1. **Neon** (database): create a free project at neon.tech → copy the
+   connection string (with `?sslmode=require`).
+2. **Render** (app): dashboard → *New → Blueprint* → connect this repo
+   (`render.yaml` is auto-detected) → set `DATABASE_URL` and a strong
+   `ADMIN_PASSWORD` when prompted → deploy. The build pushes the schema,
+   seeds the admin and builds the app.
+3. **UptimeRobot** (keep-awake): free monitor → HTTP(s) → your
+   `https://….onrender.com` URL → 5-minute interval. This stops the free
+   instance from sleeping after 15 idle minutes.
+4. **Custom domain**: Render service → Settings → Custom Domains → add
+   `funwithu.in` → create the CNAME/A records it shows at your DNS provider.
+   TLS certificate is issued automatically.
+
+Free-tier limits to know: the instance restarts on each deploy, so files in
+`uploads/` (model verification photos) are wiped — fine for testing, but move
+uploads to S3/Cloudinary (or a Render paid disk) before real onboarding.
+Video calls are peer-to-peer, so call quality does not depend on the free
+server size.
 
 ## The three sides
 

@@ -1,0 +1,22 @@
+# Render Blueprint — deploy FunWithU with one click ("New +" → "Blueprint")
+# Free plan note: the service sleeps after 15 min idle; keep it awake with an
+# UptimeRobot monitor pinging the URL every 5 minutes.
+services:
+  - type: web
+    name: funwithu
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npx prisma generate && npm run deploy:build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # paste your Neon/Supabase Postgres URL in the dashboard
+      - key: AUTH_SECRET
+        generateValue: true # Render generates a strong random secret
+      - key: ADMIN_EMAIL
+        value: admin@funwithu.in
+      - key: ADMIN_PASSWORD
+        sync: false # set a strong password (12+ chars) in the dashboard
