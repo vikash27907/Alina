@@ -58,6 +58,48 @@ body {
   }
 }
 
+/* legal document typography */
+.legal-prose h1 {
+  @apply text-2xl sm:text-3xl font-extrabold mb-2 leading-tight;
+}
+.legal-prose h2 {
+  @apply text-lg sm:text-xl font-bold mt-8 mb-3 text-white;
+}
+.legal-prose p {
+  @apply text-mist leading-relaxed mb-4 text-[15px];
+}
+.legal-prose strong {
+  @apply text-white font-semibold;
+}
+.legal-prose a {
+  @apply text-blush hover:underline;
+}
+.legal-prose ul,
+.legal-prose ol {
+  @apply text-mist mb-4 pl-5 space-y-1.5 text-[15px];
+}
+.legal-prose ul {
+  @apply list-disc;
+}
+.legal-prose ol {
+  @apply list-decimal;
+}
+.legal-prose blockquote {
+  @apply border-l-2 border-blush/60 bg-ink rounded-r-2xl px-4 py-3 my-4 text-mist;
+}
+.legal-prose blockquote p {
+  @apply mb-1;
+}
+.legal-prose table {
+  @apply w-full text-sm text-mist my-4 border-collapse block overflow-x-auto;
+}
+.legal-prose th {
+  @apply text-left text-white font-semibold border-b border-edge px-3 py-2;
+}
+.legal-prose td {
+  @apply border-b border-edge/60 px-3 py-2 align-top;
+}
+
 /* smooth everything */
 a,
 button {

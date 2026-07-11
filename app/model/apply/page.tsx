@@ -101,8 +101,12 @@ export default function ModelApply() {
             </div>
             <label className="flex items-start gap-3 text-sm text-mist cursor-pointer">
               <input type="checkbox" name="adult" required className="mt-1 accent-pink-500" />
-              I confirm I am 18+, these documents are mine, and I agree to the
-              model terms.
+              <span>
+                I confirm I am 18+, these documents are mine, and I accept the{" "}
+                <a href="/legal/creator-agreement" target="_blank" className="text-blush hover:underline">Creator Agreement</a>,{" "}
+                <a href="/legal/terms" target="_blank" className="text-blush hover:underline">Terms of Service</a> and{" "}
+                <a href="/legal/community-guidelines" target="_blank" className="text-blush hover:underline">Community Guidelines</a>.
+              </span>
             </label>
             {error && <p className="text-blush text-sm">{error}</p>}
             <div className="flex gap-3">

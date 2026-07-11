@@ -100,8 +100,16 @@ export default async function Landing() {
         </Link>
       </section>
 
-      <footer className="text-center text-mist/60 text-sm mt-20 space-y-2">
+      <footer className="text-center text-mist/60 text-sm mt-20 space-y-3">
         <p>funwithu.in — for adults 18+ only. Be kind, stay safe.</p>
+        <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+          <Link href="/legal/terms" className="hover:text-white">Terms</Link>
+          <Link href="/legal/privacy" className="hover:text-white">Privacy</Link>
+          <Link href="/legal/community-guidelines" className="hover:text-white">Guidelines</Link>
+          <Link href="/legal/refund-policy" className="hover:text-white">Refunds</Link>
+          <Link href="/legal/grievance" className="hover:text-white">Grievance</Link>
+          <Link href="/legal" className="hover:text-white">All policies</Link>
+        </nav>
         <p>© {new Date().getFullYear()} FunWithU</p>
       </footer>
     </div>

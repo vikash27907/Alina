@@ -54,7 +54,12 @@ export default function Signup() {
           </div>
           <label className="flex items-start gap-3 text-sm text-mist cursor-pointer">
             <input type="checkbox" name="adult" required className="mt-1 accent-pink-500" />
-            I confirm I am 18 years or older and accept the terms.
+            <span>
+              I confirm I am 18 years or older and accept the{" "}
+              <a href="/legal/terms" target="_blank" className="text-blush hover:underline">Terms of Service</a>,{" "}
+              <a href="/legal/privacy" target="_blank" className="text-blush hover:underline">Privacy Policy</a> and{" "}
+              <a href="/legal/community-guidelines" target="_blank" className="text-blush hover:underline">Community Guidelines</a>.
+            </span>
           </label>
           {error && <p className="text-blush text-sm">{error}</p>}
           <button disabled={busy} className="btn-exotic w-full">

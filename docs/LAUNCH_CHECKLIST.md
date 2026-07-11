@@ -13,18 +13,21 @@ Status legend: ✅ done in code · 🔶 partially done / stubbed · ⬜ not star
 
 ## 2. Legal documents (draft → lawyer review → publish)
 
-- ⬜ Terms of Service
-- ⬜ Privacy Policy (India DPDP Act 2023; GDPR if serving EU users)
-- ⬜ Community Guidelines
-- ⬜ Acceptable Use Policy
-- ⬜ Creator (Model) Agreement — independent contractor terms, payout terms, tax responsibility
-- ⬜ Refund Policy — non-refundable *by default* with defined exceptions:
-  technical failure on our side, duplicate charges, fraudulent transactions,
-  service not delivered as described
-- ⬜ Content Removal / Copyright (DMCA-style) Policy
-- ⬜ Age Policy (18+ statement + verification method)
-- ⬜ Cookie Policy
-- ⬜ Grievance Officer & contact details (required for Indian intermediaries under IT Rules 2021)
+All ten documents are drafted and live at `/legal/*` (source: `content/legal/*.md`).
+Before launch: fill the [BRACKETED] placeholders (company legal name, registered
+address, city of jurisdiction, Grievance Officer name) and get a lawyer's review —
+especially of the Terms, Creator Agreement and Privacy Policy.
+
+- 🔶 Terms of Service — drafted (IT Act/IT Rules/CPA anchored); needs entity details + lawyer review
+- 🔶 Privacy Policy — drafted (DPDP Act 2023 + GDPR/CCPA sections); needs entity details + lawyer review
+- 🔶 Community Guidelines — drafted; operational, low legal risk
+- 🔶 Acceptable Use Policy — drafted (mirrors Rule 3(1)(b) IT Rules 2021)
+- 🔶 Creator Agreement — drafted (contractor status, earnings, TDS, payout freeze rules); lawyer review strongly advised
+- 🔶 Refund & Cancellation Policy — drafted with CPA-2019-compliant exceptions
+- 🔶 Content Removal / Copyright Policy — drafted (24h/36h IT Rules timelines + DMCA-style notice flow)
+- 🔶 Age Policy — drafted
+- 🔶 Cookie Policy — drafted (accurate to the single auth cookie actually used)
+- 🔶 Grievance Redressal Policy — drafted; REQUIRES appointing a real Grievance Officer (a named resident Indian employee/officer) before launch
 
 ## 3. Company & money
 
