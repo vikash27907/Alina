@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import AdminActions, { PayoutActions } from "./AdminActions";
+import AdminActions, { PayoutActions, ReportActions, TicketReply } from "./AdminActions";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,28 @@ export default async function AdminPage() {
       db.call.aggregate({ _sum: { coinsSpent: true } }),
     ]),
     db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+  ]);
+
+  const [openReports, openTickets] = await Promise.all([
+    db.report.findMany({
+      where: { status: "OPEN" },
+      include: {
+        reporter: { select: { name: true, email: true, role: true } },
+        reported: {
+          select: { id: true, name: true, email: true, role: true, status: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.supportTicket.findMany({
+      where: { status: { not: "CLOSED" } },
+      include: {
+        user: { select: { name: true, email: true, role: true } },
+        messages: { orderBy: { createdAt: "asc" } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+    }),
   ]);
 
   const [customers, approvedModels, totalCalls, coinAgg] = stats;
@@ -115,6 +137,104 @@ export default async function AdminPage() {
               </div>
               <PayoutActions payoutId={p.id} />
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* user reports */}
+      <section className="mt-10">
+        <h2 className="font-bold text-lg mb-4">
+          User reports{" "}
+          <span className="text-mist text-sm">({openReports.length} open)</span>
+        </h2>
+        {openReports.length === 0 && (
+          <p className="text-mist/60 text-sm">No open reports.</p>
+        )}
+        <div className="space-y-4">
+          {openReports.map((r) => (
+            <div key={r.id} className="card p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="text-sm">
+                  <p>
+                    <span className="font-bold text-blush">{r.reason}</span>
+                    {r.detail && <span className="text-mist"> — {r.detail}</span>}
+                  </p>
+                  <p className="text-mist mt-2">
+                    Reported:{" "}
+                    <span className="text-white font-semibold">
+                      {r.reported.name}
+                    </span>{" "}
+                    ({r.reported.email} · {r.reported.role.toLowerCase()}
+                    {r.reported.status !== "ACTIVE" ? ` · ${r.reported.status}` : ""})
+                  </p>
+                  <p className="text-mist">
+                    By: {r.reporter.name} ({r.reporter.email} ·{" "}
+                    {r.reporter.role.toLowerCase()})
+                  </p>
+                  <p className="text-mist/60 mt-1">
+                    {r.createdAt.toISOString().replace("T", " ").slice(0, 16)}
+                    {r.callId && " · during a call"}
+                  </p>
+                </div>
+                <ReportActions
+                  reportId={r.id}
+                  reportedIsModel={r.reported.role === "MODEL"}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* support inbox */}
+      <section className="mt-10">
+        <h2 className="font-bold text-lg mb-4">
+          Support inbox{" "}
+          <span className="text-mist text-sm">({openTickets.length} open)</span>
+        </h2>
+        {openTickets.length === 0 && (
+          <p className="text-mist/60 text-sm">Inbox zero. ✨</p>
+        )}
+        <div className="space-y-4">
+          {openTickets.map((t) => (
+            <details key={t.id} className="card overflow-hidden" open={t.status === "OPEN"}>
+              <summary className="px-6 py-4 cursor-pointer flex items-center justify-between gap-3 list-none">
+                <span className="text-sm">
+                  <span className="font-bold">{t.subject}</span>{" "}
+                  <span className="text-mist">
+                    — {t.user.name} ({t.user.email} · {t.user.role.toLowerCase()})
+                  </span>
+                </span>
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-full border shrink-0 ${
+                    t.status === "OPEN"
+                      ? "border-blush/60 text-blush"
+                      : "border-gold/60 text-gold"
+                  }`}
+                >
+                  {t.status === "OPEN" ? "Needs reply" : "Answered"}
+                </span>
+              </summary>
+              <div className="px-6 pb-5 space-y-3 border-t border-edge pt-4">
+                {t.messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                      m.fromAdmin
+                        ? "bg-exotic-soft border border-violet/40 ml-auto"
+                        : "bg-ink border border-edge"
+                    }`}
+                  >
+                    <span className="block text-[11px] opacity-60 mb-0.5">
+                      {m.fromAdmin ? "Support (you)" : t.user.name} ·{" "}
+                      {m.createdAt.toISOString().slice(0, 10)}
+                    </span>
+                    {m.text}
+                  </div>
+                ))}
+                <TicketReply ticketId={t.id} />
+              </div>
+            </details>
           ))}
         </div>
       </section>

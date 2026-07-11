@@ -182,6 +182,21 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
     socketRef.current?.emit("find");
   }
 
+  function reportPartner() {
+    const reason = window.prompt(
+      "Why are you reporting this person?\n(e.g. abusive behaviour, inappropriate content, scam)"
+    );
+    if (!reason?.trim()) return;
+    socketRef.current?.emit("report", { reason: reason.trim() });
+    setNote("Report submitted — our team will review it. Thank you.");
+  }
+
+  function blockPartner() {
+    if (!window.confirm("Block this person? You will never be matched with them again.")) return;
+    socketRef.current?.emit("block:partner");
+    setNote("Blocked. You won't be paired with them again.");
+  }
+
   function sendChat(e: React.FormEvent) {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -293,7 +308,7 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
 
           {/* in-call controls */}
           {inCall && (
-            <div className="absolute bottom-3 left-3 flex gap-2">
+            <div className="absolute bottom-3 left-3 flex gap-2 flex-wrap">
               <button onClick={stop} className="btn-ghost !px-4 !py-2 !bg-night/80">
                 ✕ End
               </button>
@@ -302,6 +317,20 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
                   ⏭ Next
                 </button>
               )}
+              <button
+                onClick={reportPartner}
+                title="Report this person"
+                className="btn-ghost !px-3 !py-2 !bg-night/80"
+              >
+                ⚠
+              </button>
+              <button
+                onClick={blockPartner}
+                title="Block this person"
+                className="btn-ghost !px-3 !py-2 !bg-night/80"
+              >
+                🚫
+              </button>
             </div>
           )}
         </div>

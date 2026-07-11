@@ -8,6 +8,12 @@ export async function POST(req: Request) {
   if (!user?.modelProfile || user.modelProfile.status !== "APPROVED")
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  if (user.modelProfile.payoutFrozen)
+    return NextResponse.json(
+      { error: "Payouts are temporarily on hold for your account. Contact support." },
+      { status: 403 }
+    );
+
   const { amount, method, details } = await req.json();
   const amt = Math.floor(Number(amount));
 

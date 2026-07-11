@@ -47,6 +47,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Wrong email or password." }, { status: 401 });
   }
 
+  if (user.status === "BANNED")
+    return NextResponse.json(
+      { error: "This account has been permanently banned." },
+      { status: 403 }
+    );
+  if (user.status === "SUSPENDED" && user.suspendedUntil) {
+    if (user.suspendedUntil > new Date()) {
+      return NextResponse.json(
+        {
+          error: `Account suspended until ${user.suspendedUntil.toISOString().slice(0, 10)}. Contact support if you believe this is a mistake.`,
+        },
+        { status: 403 }
+      );
+    }
+    // suspension expired — reactivate
+    await db.user.update({
+      where: { id: user.id },
+      data: { status: "ACTIVE", suspendedUntil: null },
+    });
+  }
+
   rateLimitReset(key);
   if (user.role === "ADMIN") {
     await audit({ actorId: user.id, action: "ADMIN_LOGIN", ip });

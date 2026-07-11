@@ -8,16 +8,69 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  password     String
-  name         String
-  role         String        @default("CUSTOMER") // CUSTOMER | MODEL | ADMIN
-  coins        Int           @default(30) // free trial coins on signup
-  createdAt    DateTime      @default(now())
-  modelProfile ModelProfile?
-  transactions Transaction[]
-  customerCalls Call[]       @relation("CustomerCalls")
+  id             String        @id @default(cuid())
+  email          String        @unique
+  password       String
+  name           String
+  role           String        @default("CUSTOMER") // CUSTOMER | MODEL | ADMIN
+  status         String        @default("ACTIVE") // ACTIVE | SUSPENDED | BANNED
+  suspendedUntil DateTime?
+  coins          Int           @default(30) // free trial coins on signup
+  createdAt      DateTime      @default(now())
+  modelProfile   ModelProfile?
+  transactions   Transaction[]
+  customerCalls  Call[]        @relation("CustomerCalls")
+  reportsMade    Report[]      @relation("Reporter")
+  reportsAgainst Report[]      @relation("Reported")
+  blocksMade     Block[]       @relation("Blocker")
+  blocksAgainst  Block[]       @relation("Blocked")
+  supportTickets SupportTicket[]
+}
+
+model Report {
+  id         String    @id @default(cuid())
+  reporterId String
+  reporter   User      @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedId String
+  reported   User      @relation("Reported", fields: [reportedId], references: [id], onDelete: Cascade)
+  callId     String    @default("")
+  reason     String
+  detail     String    @default("")
+  status     String    @default("OPEN") // OPEN | ACTIONED | DISMISSED
+  resolution String    @default("")
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model SupportTicket {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String
+  status    String           @default("OPEN") // OPEN | ANSWERED | CLOSED
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  messages  SupportMessage[]
+}
+
+model SupportMessage {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromAdmin Boolean       @default(false)
+  text      String
+  createdAt DateTime      @default(now())
 }
 
 model ModelProfile {
@@ -33,6 +86,7 @@ model ModelProfile {
   selfiePath   String
   earnings     Int      @default(0) // lifetime earnings, in ₹
   balance      Int      @default(0) // withdrawable balance, in ₹
+  payoutFrozen Boolean  @default(false)
   totalMinutes Int      @default(0)
   rating       Float    @default(5)
   createdAt    DateTime @default(now())

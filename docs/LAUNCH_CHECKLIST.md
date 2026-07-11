@@ -49,11 +49,13 @@ Status legend: ✅ done in code · 🔶 partially done / stubbed · ⬜ not star
 
 ## 5. Moderation & safety tooling
 
-- ⬜ Report user (in-call + profile) with reason categories
-- ⬜ Block user
-- ⬜ Suspend / ban accounts from admin panel (emergency one-click)
-- ⬜ Payout freeze on models under investigation
-- ✅ Audit log (admin logins, approvals, payouts, failed login attempts)
+- ✅ Report user in-call (both directions, with reason) → admin review queue
+- ✅ Block user in-call — blocked pairs are never matched again
+- ✅ Suspend (timed) / permanently ban accounts from admin panel; enforced at
+  login and on live socket connections
+- ✅ Payout freeze / unfreeze for models under investigation
+- ✅ Audit log (admin logins, approvals, payouts, moderation actions, failed logins)
+- ✅ Support ticket system (any user → admin inbox, threaded replies)
 - ⬜ Chat log retention — only where disclosed in the Privacy Policy
 - ⬜ Moderator role (separate from full admin)
 - ⬜ On-call escalation process for serious reports

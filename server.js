@@ -183,16 +183,45 @@ async function startCall(io, customerSocket, modelSocket) {
   }, TICK_SECONDS * 1000);
 }
 
-function tryMatch(io) {
-  while (waitingCustomers.size > 0 && availableModels.size > 0) {
-    const [cid, customerSocket] = waitingCustomers.entries().next().value;
-    const [mid, modelSocket] = availableModels.entries().next().value;
-    waitingCustomers.delete(cid);
-    availableModels.delete(mid);
-    if (!customerSocket.connected || !modelSocket.connected) continue;
-    startCall(io, customerSocket, modelSocket).catch((e) =>
-      console.error("startCall error", e)
-    );
+async function isBlocked(a, b) {
+  const block = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: a, blockedId: b },
+        { blockerId: b, blockedId: a },
+      ],
+    },
+    select: { id: true },
+  });
+  return !!block;
+}
+
+let matchingBusy = false;
+async function tryMatch(io) {
+  if (matchingBusy) return;
+  matchingBusy = true;
+  try {
+    for (const [cid, customerSocket] of [...waitingCustomers]) {
+      if (!customerSocket.connected) {
+        waitingCustomers.delete(cid);
+        continue;
+      }
+      for (const [mid, modelSocket] of [...availableModels]) {
+        if (!modelSocket.connected) {
+          availableModels.delete(mid);
+          continue;
+        }
+        if (await isBlocked(cid, mid)) continue; // blocked pair — try next model
+        waitingCustomers.delete(cid);
+        availableModels.delete(mid);
+        await startCall(io, customerSocket, modelSocket).catch((e) =>
+          console.error("startCall error", e)
+        );
+        break;
+      }
+    }
+  } finally {
+    matchingBusy = false;
   }
 }
 
@@ -215,6 +244,13 @@ app.prepare().then(() => {
       include: { modelProfile: true },
     });
     if (!user) return nextFn(new Error("unauthorized"));
+    if (user.status === "BANNED") return nextFn(new Error("banned"));
+    if (
+      user.status === "SUSPENDED" &&
+      user.suspendedUntil &&
+      user.suspendedUntil > new Date()
+    )
+      return nextFn(new Error("suspended"));
     socket.data.uid = user.id;
     socket.data.name = user.name;
     socket.data.role = user.role;
@@ -327,6 +363,53 @@ app.prepare().then(() => {
     socket.on("call:end", () => {
       const call = activeCalls.get(socket.data.callId);
       if (call) endCall(io, call, "ended-by-user");
+    });
+
+    // report the current call partner (works for both sides)
+    socket.on("report", async ({ reason, detail } = {}) => {
+      const call = activeCalls.get(socket.data.callId);
+      if (!call || typeof reason !== "string" || !reason.trim()) return;
+      const isCustomer = socket.data.uid === call.customerSocket.data.uid;
+      const reportedId = isCustomer
+        ? call.modelSocket.data.uid
+        : call.customerSocket.data.uid;
+      try {
+        await prisma.report.create({
+          data: {
+            reporterId: socket.data.uid,
+            reportedId,
+            callId: call.dbId,
+            reason: String(reason).slice(0, 100),
+            detail: String(detail || "").slice(0, 500),
+          },
+        });
+        socket.emit("report:ok");
+      } catch (e) {
+        console.error("report error", e);
+      }
+    });
+
+    // block the current call partner and end the call
+    socket.on("block:partner", async () => {
+      const call = activeCalls.get(socket.data.callId);
+      if (!call) return;
+      const isCustomer = socket.data.uid === call.customerSocket.data.uid;
+      const blockedId = isCustomer
+        ? call.modelSocket.data.uid
+        : call.customerSocket.data.uid;
+      try {
+        await prisma.block.upsert({
+          where: {
+            blockerId_blockedId: { blockerId: socket.data.uid, blockedId },
+          },
+          update: {},
+          create: { blockerId: socket.data.uid, blockedId },
+        });
+        socket.emit("block:ok");
+      } catch (e) {
+        console.error("block error", e);
+      }
+      endCall(io, call, "ended-by-user");
     });
 
     socket.on("disconnect", () => {

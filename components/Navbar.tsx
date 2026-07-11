@@ -46,6 +46,9 @@ export default function Navbar({ user }: { user: NavUser }) {
 
           {user && user.role === "CUSTOMER" && !user.modelStatus && (
             <>
+              <Link href="/support" className="text-mist hover:text-white px-2 hidden sm:block">
+                Support
+              </Link>
               <Link
                 href="/coins"
                 className="flex items-center gap-1.5 bg-surface border border-edge rounded-2xl px-3 py-2 hover:border-gold/60"
@@ -65,6 +68,9 @@ export default function Navbar({ user }: { user: NavUser }) {
 
           {user && user.modelStatus && (
             <>
+              <Link href="/support" className="text-mist hover:text-white px-2 hidden sm:block">
+                Support
+              </Link>
               <Link href="/model/dashboard" className="btn-exotic !px-4 !py-2">
                 Dashboard
               </Link>
