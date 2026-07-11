@@ -14,16 +14,21 @@ export default function ModelApply() {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/model/apply", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Something went wrong");
+    try {
+      const form = new FormData(e.currentTarget);
+      const res = await fetch("/api/model/apply", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Submission failed (error ${res.status}). Please try again.`);
+        setBusy(false);
+        return;
+      }
+      router.push("/model/dashboard");
+      router.refresh();
+    } catch {
+      setError("Network error — please check your connection and try again.");
       setBusy(false);
-      return;
     }
-    router.push("/model/dashboard");
-    router.refresh();
   }
 
   return (

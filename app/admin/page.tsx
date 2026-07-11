@@ -93,14 +93,14 @@ export default async function AdminPage() {
                   </p>
                   <div className="flex gap-3 mt-3 text-sm">
                     <a
-                      href={`/api/admin/doc/${m.idDocPath}`}
+                      href={`/api/admin/doc/${m.id}__id`}
                       target="_blank"
                       className="text-blush hover:underline"
                     >
                       View ID document →
                     </a>
                     <a
-                      href={`/api/admin/doc/${m.selfiePath}`}
+                      href={`/api/admin/doc/${m.id}__selfie`}
                       target="_blank"
                       className="text-blush hover:underline"
                     >

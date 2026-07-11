@@ -14,22 +14,27 @@ export default function Login() {
     setBusy(true);
     setError("");
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: form.get("email"),
-        password: form.get("password"),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Login failed");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.get("email"),
+          password: form.get("password"),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Login failed (error ${res.status}). Please try again.`);
+        setBusy(false);
+        return;
+      }
+      router.push(data.redirect || "/chat");
+      router.refresh();
+    } catch {
+      setError("Network error — please check your connection and try again.");
       setBusy(false);
-      return;
     }
-    router.push(data.redirect || "/chat");
-    router.refresh();
   }
 
   return (

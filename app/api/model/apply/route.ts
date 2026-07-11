@@ -1,31 +1,35 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import fs from "fs/promises";
-import path from "path";
-import crypto from "crypto";
 import { db } from "@/lib/db";
 import { signToken, TOKEN_COOKIE } from "@/lib/auth";
-
 import { rateLimit, clientIp } from "@/lib/ratelimit";
 
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
-const MAX_FILE = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "webp", "heic"]);
+const MAX_FILE = 5 * 1024 * 1024; // 5 MB per image
 
-async function saveUpload(file: File, prefix: string) {
-  if (file.size > MAX_FILE) throw new Error("File too large (max 8 MB).");
+// Verification photos are stored in the database as data URLs. This keeps them
+// off the (ephemeral, per-instance) filesystem so they survive restarts and
+// behave identically on any host. Access stays restricted to admins.
+async function toDataUrl(file: File): Promise<string> {
+  if (file.size > MAX_FILE) throw new Error("Each image must be under 5 MB.");
   if (!file.type.startsWith("image/"))
     throw new Error("Only image files are accepted.");
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!ALLOWED_EXT.has(ext))
-    throw new Error("Only JPG, PNG, WEBP or HEIC images are accepted.");
-  const name = `${prefix}-${crypto.randomBytes(12).toString("hex")}.${ext}`;
-  await fs.mkdir(UPLOAD_DIR, { recursive: true });
-  await fs.writeFile(path.join(UPLOAD_DIR, name), Buffer.from(await file.arrayBuffer()));
-  return name;
+  const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+  return `data:${file.type};base64,${b64}`;
 }
 
 export async function POST(req: Request) {
+  try {
+    return await handle(req);
+  } catch (e: any) {
+    console.error("model apply error:", e);
+    return NextResponse.json(
+      { error: "Something went wrong submitting your application. Please try again." },
+      { status: 500 }
+    );
+  }
+}
+
+async function handle(req: Request) {
   const ip = clientIp(req);
   if (!rateLimit(`model-apply:${ip}`, 5, 60 * 60 * 1000))
     return NextResponse.json(
@@ -50,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You must confirm you are 18+." }, { status: 400 });
   if (password.length < 8)
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
-  if (!(idDoc instanceof File) || !(selfie instanceof File))
+  if (!(idDoc instanceof File) || !(selfie instanceof File) || idDoc.size === 0 || selfie.size === 0)
     return NextResponse.json({ error: "Both verification photos are required." }, { status: 400 });
 
   // must be 18+ by date of birth
@@ -64,10 +68,10 @@ export async function POST(req: Request) {
 
   let idDocPath: string, selfiePath: string;
   try {
-    idDocPath = await saveUpload(idDoc, "id");
-    selfiePath = await saveUpload(selfie, "selfie");
+    idDocPath = await toDataUrl(idDoc);
+    selfiePath = await toDataUrl(selfie);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Upload failed." }, { status: 400 });
+    return NextResponse.json({ error: e.message || "Could not process the images." }, { status: 400 });
   }
 
   const user = await db.user.create({

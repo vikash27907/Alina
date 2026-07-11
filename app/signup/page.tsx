@@ -14,24 +14,29 @@ export default function Signup() {
     setBusy(true);
     setError("");
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: form.get("name"),
-        email: form.get("email"),
-        password: form.get("password"),
-        adult: form.get("adult") === "on",
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Something went wrong");
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.get("name"),
+          email: form.get("email"),
+          password: form.get("password"),
+          adult: form.get("adult") === "on",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Signup failed (error ${res.status}). Please try again.`);
+        setBusy(false);
+        return;
+      }
+      router.push("/chat");
+      router.refresh();
+    } catch {
+      setError("Network error — please check your connection and try again.");
       setBusy(false);
-      return;
     }
-    router.push("/chat");
-    router.refresh();
   }
 
   return (
