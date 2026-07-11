@@ -30,6 +30,9 @@ export default function Navbar({ user }: { user: NavUser }) {
         </Link>
 
         <nav className="flex items-center gap-2 text-sm">
+          <Link href="/live" className="text-mist hover:text-white px-2">
+            🔴 Live
+          </Link>
           {!user && (
             <>
               <Link href="/model/apply" className="text-mist hover:text-white px-2 hidden sm:block">

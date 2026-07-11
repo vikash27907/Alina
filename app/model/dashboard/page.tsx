@@ -56,6 +56,9 @@ export default async function ModelDashboard() {
           <h1 className="text-2xl font-bold">Hey {user.name} 👋</h1>
           <p className="text-mist text-sm">Go online whenever you&apos;re ready to earn.</p>
         </div>
+        <a href="/model/live" className="btn-exotic !px-5 !py-2.5">
+          🔴 Go Live
+        </a>
       </div>
 
       {/* stats */}

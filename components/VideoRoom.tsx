@@ -68,6 +68,16 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
       setPhase(online ? "online" : "idle")
     );
     socket.on("error:msg", (msg: string) => setNote(msg));
+    socket.on("mod:warning", ({ message, strikes, max }: any) =>
+      setNote(`⚠ ${message} (warning ${strikes}/${max})`)
+    );
+    socket.on("mod:banned", ({ seconds }: any) =>
+      setNote(
+        `⛔ You are timed out for ${
+          seconds >= 3600 ? Math.round(seconds / 3600) + " hour(s)" : Math.round(seconds / 60) + " minute(s)"
+        } for breaking the content rules.`
+      )
+    );
     socket.on("wallet", ({ coins }: { coins: number }) => setCoins(coins));
     socket.on("earned", ({ total }: { total: number }) => setEarned(total));
 

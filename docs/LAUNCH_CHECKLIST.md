@@ -59,6 +59,10 @@ especially of the Terms, Creator Agreement and Privacy Policy.
 - ✅ Payout freeze / unfreeze for models under investigation
 - ✅ Audit log (admin logins, approvals, payouts, moderation actions, failed logins)
 - ✅ Support ticket system (any user → admin inbox, threaded replies)
+- ✅ Automated explicit-content filter on all text chat (warnings → 1/5/30-min
+  timeouts → 24h auto-suspension, all logged to audit trail)
+- ✅ Auto-timeout on report bursts (3 reports in 15 min → 30-min timeout + admin flag)
+- ⬜ ML-based video nudity detection for live streams (rely on reports + timeouts for MVP)
 - ⬜ Chat log retention — only where disclosed in the Privacy Policy
 - ⬜ Moderator role (separate from full admin)
 - ⬜ On-call escalation process for serious reports

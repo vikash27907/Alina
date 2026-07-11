@@ -37,6 +37,162 @@ const COINS_PER_TICK = COINS_PER_MIN / (60 / TICK_SECONDS); // 1 coin / 10s
 const GIFTS = { rose: 10, kiss: 25, ring: 60, crown: 150 };
 const GIFT_MODEL_SHARE = 0.6;
 
+// ---------- automated content moderation ----------
+// Explicit-content filter for text (English + common Hindi transliterations).
+// Extend this list from the admin side as patterns emerge.
+const EXPLICIT = new RegExp(
+  "\\b(" +
+    [
+      "nudes?", "naked", "nangi", "nanga", "porn\\w*", "sex", "sexting",
+      "boobs?", "tits?", "nipples?", "pussy", "vagina", "penis", "dick",
+      "cock", "lund", "chut\\w*", "bhos\\w*", "gaand", "blowjob", "handjob",
+      "anal", "cum", "cumming", "masturbat\\w*", "striptease", "stripping",
+      "randi", "raand", "madarchod", "behenchod", "bhenchod", "chudai",
+      "escort", "prostitut\\w*", "onlyfans"
+    ].join("|") +
+    ")\\b",
+  "i"
+);
+const isExplicit = (text) => EXPLICIT.test(text);
+
+// warnings → timed cooldown bans (1 min → 5 min → 30 min) → 24h suspension
+const COOLDOWN_LEVELS = [60, 300, 1800]; // seconds
+const chatStrikes = new Map(); // uid -> { count, level, resetAt }
+const cooldownUntil = new Map(); // uid -> timestamp ms
+
+function onCooldown(uid) {
+  const t = cooldownUntil.get(uid);
+  if (!t) return 0;
+  const rem = t - Date.now();
+  if (rem <= 0) {
+    cooldownUntil.delete(uid);
+    return 0;
+  }
+  return Math.ceil(rem / 1000);
+}
+
+async function addStrike(io, socket) {
+  const uid = socket.data.uid;
+  const now = Date.now();
+  let s = chatStrikes.get(uid);
+  if (!s || s.resetAt < now)
+    s = { count: 0, level: s ? s.level : 0, resetAt: now + 3600_000 };
+  s.count += 1;
+  chatStrikes.set(uid, s);
+
+  if (s.count < 3) {
+    socket.emit("mod:warning", {
+      strikes: s.count,
+      max: 3,
+      message:
+        "Explicit content is not allowed on FunWithU. Further violations will time you out.",
+    });
+    return;
+  }
+
+  s.count = 0;
+  if (s.level >= COOLDOWN_LEVELS.length) {
+    // repeated offender — 24h account suspension, visible to admin
+    try {
+      await prisma.user.update({
+        where: { id: uid },
+        data: {
+          status: "SUSPENDED",
+          suspendedUntil: new Date(now + 24 * 3600_000),
+        },
+      });
+      await prisma.auditLog.create({
+        data: {
+          actorId: "system",
+          action: "AUTO_SUSPEND_CHAT",
+          target: uid,
+          detail: "repeated explicit-content violations (auto-moderation)",
+        },
+      });
+    } catch (e) {
+      console.error("auto-suspend error", e);
+    }
+    socket.emit("mod:banned", { seconds: 24 * 3600 });
+    socket.disconnect(true);
+    return;
+  }
+
+  const secs = COOLDOWN_LEVELS[s.level];
+  s.level += 1;
+  cooldownUntil.set(uid, now + secs * 1000);
+  socket.emit("mod:banned", { seconds: secs });
+
+  const call = activeCalls.get(socket.data.callId);
+  if (call) endCall(io, call, "moderation");
+  waitingCustomers.delete(uid);
+  availableModels.delete(uid);
+  if (liveRooms.has(uid)) stopLive(io, uid, "moderation");
+}
+
+// too many reports in a short window → automatic 30-min timeout pending review
+async function reportThreshold(io, reportedUid) {
+  const since = new Date(Date.now() - 15 * 60_000);
+  const count = await prisma.report.count({
+    where: { reportedId: reportedUid, createdAt: { gte: since } },
+  });
+  if (count < 3) return;
+  cooldownUntil.set(reportedUid, Date.now() + 30 * 60_000);
+  waitingCustomers.delete(reportedUid);
+  availableModels.delete(reportedUid);
+  if (liveRooms.has(reportedUid)) stopLive(io, reportedUid, "moderation");
+  await prisma.auditLog
+    .create({
+      data: {
+        actorId: "system",
+        action: "AUTO_TEMPBAN_REPORTS",
+        target: reportedUid,
+        detail: `${count} reports within 15 minutes — 30 min timeout, review reports queue`,
+      },
+    })
+    .catch(() => {});
+}
+
+// ---------- live streaming ----------
+/** modelUid -> { modelUid, modelName, modelProfileId, modelSocket, vip, viewers: Map<socketId, socket> } */
+const liveRooms = new Map();
+let ioRef = null;
+
+function liveList() {
+  return [...liveRooms.values()].map((r) => ({
+    uid: r.modelUid,
+    name: r.modelName,
+    vip: r.vip,
+    viewers: r.viewers.size,
+  }));
+}
+function broadcastLiveList(io) {
+  io.emit("live:list", liveList());
+}
+function stopLive(io, modelUid, reason) {
+  const room = liveRooms.get(modelUid);
+  if (!room) return;
+  liveRooms.delete(modelUid);
+  for (const v of room.viewers.values()) {
+    v.data.watching = null;
+    v.emit("live:ended", { reason });
+  }
+  if (room.modelSocket?.connected) room.modelSocket.emit("live:ended", { reason });
+  broadcastLiveList(io);
+}
+function leaveLive(io, socket) {
+  const m = socket.data.watching;
+  if (!m) return;
+  socket.data.watching = null;
+  const room = liveRooms.get(m);
+  if (!room) return;
+  room.viewers.delete(socket.id);
+  room.modelSocket.emit("live:viewer-left", {
+    sid: socket.id,
+    count: room.viewers.size,
+  });
+  broadcastLiveList(io);
+}
+
 const prisma = new PrismaClient();
 const app = next({ dev });
 const handle = app.getRequestHandler();
@@ -229,10 +385,18 @@ app.prepare().then(() => {
   const server = createServer((req, res) => handle(req, res));
   const io = new Server(server, { path: "/rtc" });
 
-  // authenticate sockets from the same JWT cookie the web app uses
+  // authenticate sockets from the same JWT cookie the web app uses.
+  // guests (no token) are allowed read-only access to public live streams.
   io.use(async (socket, nextFn) => {
     const token = parseCookie(socket.request.headers.cookie, "fwu_token");
-    if (!token) return nextFn(new Error("unauthorized"));
+    if (!token) {
+      socket.data.guest = true;
+      socket.data.uid = `guest:${socket.id}`;
+      socket.data.name = "Guest";
+      socket.data.role = "GUEST";
+      socket.data.isPayer = false;
+      return nextFn();
+    }
     let payload;
     try {
       payload = jwt.verify(token, SECRET);
@@ -244,6 +408,10 @@ app.prepare().then(() => {
       include: { modelProfile: true },
     });
     if (!user) return nextFn(new Error("unauthorized"));
+    socket.data.isPayer = !!(await prisma.transaction.findFirst({
+      where: { userId: user.id, type: "PURCHASE" },
+      select: { id: true },
+    }));
     if (user.status === "BANNED") return nextFn(new Error("banned"));
     if (
       user.status === "SUSPENDED" &&
@@ -260,8 +428,17 @@ app.prepare().then(() => {
   });
 
   io.on("connection", (socket) => {
+    const guarded = (fn) => (...args) => {
+      if (socket.data.guest) return;
+      fn(...args);
+    };
+
     // ---- model side ----
-    socket.on("model:online", () => {
+    socket.on("model:online", guarded(() => {
+      if (onCooldown(socket.data.uid)) {
+        socket.emit("mod:banned", { seconds: onCooldown(socket.data.uid) });
+        return;
+      }
       if (!socket.data.modelApproved) {
         socket.emit("error:msg", "Your model account is not approved yet.");
         return;
@@ -270,7 +447,7 @@ app.prepare().then(() => {
       availableModels.set(socket.data.uid, socket);
       socket.emit("model:status", { online: true });
       tryMatch(io);
-    });
+    }));
 
     socket.on("model:offline", () => {
       socket.data.wantsOnline = false;
@@ -279,7 +456,12 @@ app.prepare().then(() => {
     });
 
     // ---- customer side ----
-    socket.on("find", async () => {
+    socket.on("find", guarded(async () => {
+      const cd = onCooldown(socket.data.uid);
+      if (cd) {
+        socket.emit("mod:banned", { seconds: cd });
+        return;
+      }
       const user = await prisma.user.findUnique({
         where: { id: socket.data.uid },
         select: { coins: true },
@@ -291,7 +473,7 @@ app.prepare().then(() => {
       waitingCustomers.set(socket.data.uid, socket);
       socket.emit("searching");
       tryMatch(io);
-    });
+    }));
 
     socket.on("find:cancel", () => {
       waitingCustomers.delete(socket.data.uid);
@@ -305,15 +487,24 @@ app.prepare().then(() => {
       socket.to(call.room).emit("signal", data);
     });
 
-    socket.on("chat:msg", (text) => {
+    socket.on("chat:msg", guarded((text) => {
       const call = activeCalls.get(socket.data.callId);
       if (!call || typeof text !== "string" || !text.trim()) return;
+      const cd = onCooldown(socket.data.uid);
+      if (cd) {
+        socket.emit("mod:banned", { seconds: cd });
+        return;
+      }
+      if (isExplicit(text)) {
+        addStrike(io, socket);
+        return;
+      }
       io.to(call.room).emit("chat:msg", {
         from: socket.data.name,
         self: socket.id,
         text: text.slice(0, 500),
       });
-    });
+    }));
 
     socket.on("gift:send", async (giftId) => {
       const call = activeCalls.get(socket.data.callId);
@@ -384,6 +575,7 @@ app.prepare().then(() => {
           },
         });
         socket.emit("report:ok");
+        await reportThreshold(io, reportedId);
       } catch (e) {
         console.error("report error", e);
       }
@@ -412,9 +604,189 @@ app.prepare().then(() => {
       endCall(io, call, "ended-by-user");
     });
 
+    // ---- live streaming ----
+    socket.on("live:list:get", () => socket.emit("live:list", liveList()));
+
+    socket.on("live:start", guarded(async ({ vip } = {}) => {
+      if (!socket.data.modelApproved) {
+        socket.emit("error:msg", "Only approved models can go live.");
+        return;
+      }
+      const cd = onCooldown(socket.data.uid);
+      if (cd) {
+        socket.emit("mod:banned", { seconds: cd });
+        return;
+      }
+      if (liveRooms.has(socket.data.uid)) return;
+      availableModels.delete(socket.data.uid);
+      socket.data.wantsOnline = false;
+      liveRooms.set(socket.data.uid, {
+        modelUid: socket.data.uid,
+        modelName: socket.data.name,
+        modelProfileId: socket.data.modelProfileId,
+        modelSocket: socket,
+        vip: !!vip,
+        viewers: new Map(),
+      });
+      socket.emit("live:started", { vip: !!vip });
+      broadcastLiveList(io);
+    }));
+
+    socket.on("live:stop", guarded(() => stopLive(io, socket.data.uid, "ended")));
+
+    socket.on("live:vip", guarded(({ vip } = {}) => {
+      const room = liveRooms.get(socket.data.uid);
+      if (!room) return;
+      room.vip = !!vip;
+      if (room.vip) {
+        for (const [sid, v] of [...room.viewers]) {
+          if (!v.data.isPayer) {
+            room.viewers.delete(sid);
+            v.data.watching = null;
+            v.emit("live:kicked", { reason: "vip" });
+          }
+        }
+        socket.emit("live:viewers", { count: room.viewers.size });
+      }
+      socket.emit("live:vip:set", { vip: room.vip });
+      broadcastLiveList(io);
+    }));
+
+    socket.on("live:join", ({ model } = {}) => {
+      const room = liveRooms.get(model);
+      if (!room) {
+        socket.emit("live:error", { code: "gone", message: "This stream has ended." });
+        return;
+      }
+      if (room.vip && !socket.data.isPayer) {
+        socket.emit("live:error", {
+          code: "vip",
+          message: "This is a VIP stream — only members who have purchased coins can join.",
+        });
+        return;
+      }
+      if (room.viewers.size >= 20) {
+        socket.emit("live:error", { code: "full", message: "This stream is full right now." });
+        return;
+      }
+      leaveLive(io, socket);
+      room.viewers.set(socket.id, socket);
+      socket.data.watching = model;
+      room.modelSocket.emit("live:viewer", { sid: socket.id, count: room.viewers.size });
+      socket.emit("live:joined", {
+        model: room.modelName,
+        vip: room.vip,
+        count: room.viewers.size,
+      });
+      broadcastLiveList(io);
+    });
+
+    socket.on("live:leave", () => leaveLive(io, socket));
+
+    // signaling relay: broadcaster targets a viewer sid; viewers target their broadcaster
+    socket.on("live:signal", ({ to, data } = {}) => {
+      if (!data) return;
+      const own = liveRooms.get(socket.data.uid);
+      if (own && to && own.viewers.has(to)) {
+        own.viewers.get(to).emit("live:signal", { from: socket.id, data });
+        return;
+      }
+      const watching = liveRooms.get(socket.data.watching);
+      if (watching)
+        watching.modelSocket.emit("live:signal", { from: socket.id, data });
+    });
+
+    socket.on("live:comment", (text) => {
+      if (socket.data.guest) {
+        socket.emit("error:msg", "Join free to comment on live streams.");
+        return;
+      }
+      const room =
+        liveRooms.get(socket.data.watching) || liveRooms.get(socket.data.uid);
+      if (!room || typeof text !== "string" || !text.trim()) return;
+      const cd = onCooldown(socket.data.uid);
+      if (cd) {
+        socket.emit("mod:banned", { seconds: cd });
+        return;
+      }
+      if (isExplicit(text)) {
+        addStrike(io, socket);
+        return;
+      }
+      const msg = { from: socket.data.name, text: text.slice(0, 300) };
+      room.modelSocket.emit("live:comment", msg);
+      for (const v of room.viewers.values()) v.emit("live:comment", msg);
+    });
+
+    socket.on("live:gift", guarded(async (giftId) => {
+      const room = liveRooms.get(socket.data.watching);
+      const cost = GIFTS[giftId];
+      if (!room || !cost) return;
+      const user = await prisma.user.findUnique({
+        where: { id: socket.data.uid },
+        select: { coins: true },
+      });
+      if (!user || user.coins < cost) {
+        socket.emit("error:msg", "Not enough coins for that gift.");
+        return;
+      }
+      const modelCut = Math.round(cost * GIFT_MODEL_SHARE);
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: socket.data.uid },
+          data: { coins: { decrement: cost } },
+        }),
+        prisma.modelProfile.update({
+          where: { id: room.modelProfileId },
+          data: {
+            earnings: { increment: modelCut },
+            balance: { increment: modelCut },
+          },
+        }),
+        prisma.transaction.create({
+          data: {
+            userId: socket.data.uid,
+            type: "GIFT_SPEND",
+            coins: -cost,
+            meta: `${giftId} (live)`,
+          },
+        }),
+      ]);
+      const updated = await prisma.user.findUnique({
+        where: { id: socket.data.uid },
+        select: { coins: true },
+      });
+      socket.emit("wallet", { coins: updated?.coins ?? 0 });
+      const evt = { giftId, from: socket.data.name };
+      room.modelSocket.emit("gift:received", evt);
+      for (const v of room.viewers.values()) v.emit("gift:received", evt);
+    }));
+
+    socket.on("live:report", guarded(async ({ reason } = {}) => {
+      const room = liveRooms.get(socket.data.watching);
+      if (!room || typeof reason !== "string" || !reason.trim()) return;
+      try {
+        await prisma.report.create({
+          data: {
+            reporterId: socket.data.uid,
+            reportedId: room.modelUid,
+            reason: String(reason).slice(0, 100),
+            detail: "reported during live stream",
+          },
+        });
+        socket.emit("report:ok");
+        await reportThreshold(io, room.modelUid);
+      } catch (e) {
+        console.error("live report error", e);
+      }
+    }));
+
     socket.on("disconnect", () => {
       waitingCustomers.delete(socket.data.uid);
       availableModels.delete(socket.data.uid);
+      leaveLive(io, socket);
+      if (liveRooms.has(socket.data.uid))
+        stopLive(io, socket.data.uid, "disconnected");
       const call = activeCalls.get(socket.data.callId);
       if (call) endCall(io, call, "disconnected");
     });
