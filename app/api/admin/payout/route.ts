@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
+import { clientIp } from "@/lib/ratelimit";
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -33,6 +35,14 @@ export async function POST(req: Request) {
       }),
     ]);
   }
+
+  await audit({
+    actorId: user.id,
+    action: action === "paid" ? "PAYOUT_PAID" : "PAYOUT_REJECTED",
+    target: payoutId,
+    detail: `₹${payout.amount} · ${payout.method}`,
+    ip: clientIp(req),
+  });
 
   return NextResponse.json({ ok: true });
 }

@@ -9,7 +9,7 @@ export default async function AdminPage() {
   const user = await currentUser();
   if (!user || user.role !== "ADMIN") redirect("/login");
 
-  const [pendingModels, pendingPayouts, stats] = await Promise.all([
+  const [pendingModels, pendingPayouts, stats, auditTrail] = await Promise.all([
     db.modelProfile.findMany({
       where: { status: "PENDING" },
       include: { user: true },
@@ -26,6 +26,7 @@ export default async function AdminPage() {
       db.call.count(),
       db.call.aggregate({ _sum: { coinsSpent: true } }),
     ]),
+    db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
   ]);
 
   const [customers, approvedModels, totalCalls, coinAgg] = stats;
@@ -113,6 +114,34 @@ export default async function AdminPage() {
                 </p>
               </div>
               <PayoutActions payoutId={p.id} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* audit trail */}
+      <section className="mt-10">
+        <h2 className="font-bold text-lg mb-4">Audit trail</h2>
+        {auditTrail.length === 0 && (
+          <p className="text-mist/60 text-sm">No events yet.</p>
+        )}
+        <div className="card divide-y divide-edge overflow-hidden">
+          {auditTrail.map((a) => (
+            <div key={a.id} className="px-5 py-3 text-sm flex flex-wrap gap-x-4 gap-y-1 items-center">
+              <span
+                className={`font-mono text-xs px-2 py-0.5 rounded-full border ${
+                  a.action.includes("FAILED") || a.action.includes("RATE_LIMITED")
+                    ? "border-blush/50 text-blush"
+                    : "border-edge text-mist"
+                }`}
+              >
+                {a.action}
+              </span>
+              <span className="text-mist">{a.target}</span>
+              {a.detail && <span className="text-mist/70">{a.detail}</span>}
+              <span className="text-mist/50 ml-auto">
+                {a.ip} · {a.createdAt.toISOString().replace("T", " ").slice(0, 16)}
+              </span>
             </div>
           ))}
         </div>

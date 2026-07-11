@@ -4,7 +4,16 @@ import { db } from "@/lib/db";
 import { signToken, TOKEN_COOKIE } from "@/lib/auth";
 import { TRIAL_COINS } from "@/lib/economy";
 
+import { rateLimit, clientIp } from "@/lib/ratelimit";
+
 export async function POST(req: Request) {
+  const ip = clientIp(req);
+  if (!rateLimit(`signup:${ip}`, 10, 60 * 60 * 1000))
+    return NextResponse.json(
+      { error: "Too many signups from this network. Try again later." },
+      { status: 429 }
+    );
+
   const { name, email, password, adult } = await req.json();
 
   if (!name || !email || !password)

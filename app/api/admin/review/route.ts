@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
+import { clientIp } from "@/lib/ratelimit";
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -18,6 +20,14 @@ export async function POST(req: Request) {
       reviewedAt: new Date(),
       rejectReason: action === "reject" ? String(reason || "").slice(0, 300) : null,
     },
+  });
+
+  await audit({
+    actorId: user.id,
+    action: action === "approve" ? "MODEL_APPROVED" : "MODEL_REJECTED",
+    target: profileId,
+    detail: action === "reject" ? String(reason || "") : "",
+    ip: clientIp(req),
   });
 
   return NextResponse.json({ ok: true });

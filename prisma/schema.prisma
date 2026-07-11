@@ -66,6 +66,18 @@ model Call {
   endReason  String    @default("")
 }
 
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String   // user id, or "anonymous" for failed logins
+  action    String   // ADMIN_LOGIN | ADMIN_LOGIN_FAILED | MODEL_APPROVED | MODEL_REJECTED | PAYOUT_PAID | PAYOUT_REJECTED | ...
+  target    String   @default("") // affected entity id / email
+  detail    String   @default("")
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}
+
 model Payout {
   id             String       @id @default(cuid())
   modelProfileId String

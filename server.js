@@ -17,6 +17,18 @@ const { PrismaClient } = require("@prisma/client");
 const dev = process.env.NODE_ENV !== "production";
 const port = parseInt(process.env.PORT || "3000", 10);
 const SECRET = process.env.AUTH_SECRET || "dev-secret-change-me";
+if (
+  !dev &&
+  (!process.env.AUTH_SECRET ||
+    process.env.AUTH_SECRET.includes("change-me") ||
+    process.env.AUTH_SECRET.length < 32)
+) {
+  console.error(
+    "FATAL: AUTH_SECRET must be set to a random string of 32+ characters in production.\n" +
+      "Generate one with: openssl rand -base64 48"
+  );
+  process.exit(1);
+}
 
 const COINS_PER_MIN = 6;
 const MODEL_EARN_PER_MIN = 3; // ₹ per minute

@@ -3,6 +3,18 @@ import { cookies } from "next/headers";
 import { db } from "./db";
 
 const SECRET = process.env.AUTH_SECRET || "dev-secret-change-me";
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build" &&
+  (!process.env.AUTH_SECRET ||
+    process.env.AUTH_SECRET.includes("change-me") ||
+    process.env.AUTH_SECRET.length < 32)
+) {
+  throw new Error(
+    "FATAL: AUTH_SECRET must be set to a random string of 32+ characters in production. " +
+      "Generate one with: openssl rand -base64 48"
+  );
+}
 export const TOKEN_COOKIE = "fwu_token";
 
 export type TokenPayload = { uid: string; role: string };
