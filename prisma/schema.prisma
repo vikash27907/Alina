@@ -15,16 +15,34 @@ model User {
   role           String        @default("CUSTOMER") // CUSTOMER | MODEL | ADMIN
   status         String        @default("ACTIVE") // ACTIVE | SUSPENDED | BANNED
   suspendedUntil DateTime?
-  coins          Int           @default(30) // free trial coins on signup
+  coins          Int           @default(0) // customer coin wallet
+  phoneVerified  Boolean       @default(false)
+  phoneHash      String?       @unique // one phone = one trial (hashed)
+  trialMinutesLeft Int         @default(0) // free trial minutes (granted after phone verify)
   createdAt      DateTime      @default(now())
   modelProfile   ModelProfile?
   transactions   Transaction[]
   customerCalls  Call[]        @relation("CustomerCalls")
+  trialCalls     TrialCall[]
   reportsMade    Report[]      @relation("Reporter")
   reportsAgainst Report[]      @relation("Reported")
   blocksMade     Block[]       @relation("Blocker")
   blocksAgainst  Block[]       @relation("Blocked")
   supportTickets SupportTicket[]
+}
+
+// A used free-trial call. Enables the once-only model conversion bonus if the
+// caller buys coins within CONVERSION_WINDOW_H.
+model TrialCall {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modelProfileId String
+  callId         String   @default("")
+  converted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Report {
@@ -84,8 +102,8 @@ model ModelProfile {
   bio          String   @default("")
   idDocPath    String
   selfiePath   String
-  earnings     Int      @default(0) // lifetime earnings, in ₹
-  balance      Int      @default(0) // withdrawable balance, in ₹
+  earnings     Int      @default(0) // lifetime earnings, in PAISE
+  balance      Int      @default(0) // withdrawable balance, in PAISE
   payoutFrozen Boolean  @default(false)
   totalMinutes Int      @default(0)
   rating       Float    @default(5)
@@ -93,7 +111,24 @@ model ModelProfile {
   reviewedAt   DateTime?
   rejectReason String?
   payouts      Payout[]
+  earningLog   ModelEarning[]
   calls        Call[]   @relation("ModelCalls")
+}
+
+// Append-only ledger of every paise a model earns. Enables auditing and the
+// once-only trial conversion bonus (unique on trialCallId).
+model ModelEarning {
+  id             String       @id @default(cuid())
+  modelProfileId String
+  modelProfile   ModelProfile @relation(fields: [modelProfileId], references: [id], onDelete: Cascade)
+  type           String       // call | gift | conversion_bonus
+  amountPaise    Int
+  callId         String       @default("")
+  minuteNo       Int?
+  trialCallId    String?      @unique // set only for conversion_bonus; fires once
+  createdAt      DateTime     @default(now())
+
+  @@index([modelProfileId, createdAt])
 }
 
 model Transaction {
@@ -112,12 +147,14 @@ model Call {
   customer   User      @relation("CustomerCalls", fields: [customerId], references: [id], onDelete: Cascade)
   modelId    String
   model      ModelProfile @relation("ModelCalls", fields: [modelId], references: [id], onDelete: Cascade)
-  startedAt  DateTime  @default(now())
-  endedAt    DateTime?
-  seconds    Int       @default(0)
-  coinsSpent Int       @default(0)
-  modelEarn  Int       @default(0)
-  endReason  String    @default("")
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  seconds      Int       @default(0)
+  coinsSpent   Int       @default(0) // customer coins spent on this call
+  modelEarn    Int       @default(0) // model earnings for this call, in PAISE
+  minutesBilled Int      @default(0)
+  isTrial      Boolean   @default(false)
+  endReason    String    @default("")
 }
 
 model AuditLog {
@@ -136,8 +173,8 @@ model Payout {
   id             String       @id @default(cuid())
   modelProfileId String
   modelProfile   ModelProfile @relation(fields: [modelProfileId], references: [id], onDelete: Cascade)
-  amount         Int          // ₹
-  method         String       // UPI | BANK | PAYPAL | CRYPTO
+  amount         Int          // PAISE
+  method         String       // UPI | BANK (PAYPAL | CRYPTO reserved, disabled)
   details        String       // UPI id / account info given by the model
   status         String       @default("PENDING") // PENDING | PAID | REJECTED
   createdAt      DateTime     @default(now())

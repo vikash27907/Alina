@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { MIN_PAYOUT } from "@/lib/economy";
+import { MIN_PAYOUT_PAISE } from "@/lib/economy";
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -14,12 +14,15 @@ export async function POST(req: Request) {
       { status: 403 }
     );
 
-  const { amount, method, details } = await req.json();
-  const amt = Math.floor(Number(amount));
+  const { amountRupees, method, details } = await req.json();
+  const paise = Math.floor(Number(amountRupees) * 100);
 
-  if (!Number.isFinite(amt) || amt < MIN_PAYOUT)
-    return NextResponse.json({ error: `Minimum payout is ₹${MIN_PAYOUT}.` }, { status: 400 });
-  if (amt > user.modelProfile.balance)
+  if (!Number.isFinite(paise) || paise < MIN_PAYOUT_PAISE)
+    return NextResponse.json(
+      { error: `Minimum payout is ₹${MIN_PAYOUT_PAISE / 100}.` },
+      { status: 400 }
+    );
+  if (paise > user.modelProfile.balance)
     return NextResponse.json({ error: "Amount exceeds your balance." }, { status: 400 });
   // Only UPI and Indian bank transfer are supported at launch. PayPal/crypto
   // remain valid enum values in the schema (zero-migration to re-enable later)
@@ -32,12 +35,12 @@ export async function POST(req: Request) {
   await db.$transaction([
     db.modelProfile.update({
       where: { id: user.modelProfile.id },
-      data: { balance: { decrement: amt } },
+      data: { balance: { decrement: paise } },
     }),
     db.payout.create({
       data: {
         modelProfileId: user.modelProfile.id,
-        amount: amt,
+        amount: paise,
         method,
         details: String(details).slice(0, 200),
       },

@@ -129,7 +129,7 @@ export default async function AdminPage() {
             <div key={p.id} className="card p-5 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm">
                 <p className="font-bold">
-                  ₹{p.amount} · {p.method}
+                  ₹{(p.amount / 100).toFixed(2)} · {p.method}
                 </p>
                 <p className="text-mist">
                   {p.modelProfile.user.name} ({p.modelProfile.user.email}) — {p.details}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { currentUser } from "@/lib/auth";
-import { COIN_PACKAGES, TRIAL_COINS } from "@/lib/economy";
+import { COIN_PACKAGES } from "@/lib/economy";
 
 export default async function Landing() {
   const user = await currentUser();
@@ -33,7 +33,7 @@ export default async function Landing() {
           </Link>
         </div>
         <p className="text-mist/70 text-sm mt-4">
-          {TRIAL_COINS} free coins when you join — no card needed.
+Your first minute is on us — no card needed.
         </p>
       </section>
 

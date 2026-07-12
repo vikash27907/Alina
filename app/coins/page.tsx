@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
-import { COIN_PACKAGES, COINS_PER_MIN } from "@/lib/economy";
+import { COIN_PACKAGES, CALL_RATE } from "@/lib/economy";
 import BuyButton from "./BuyButton";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function CoinsPage() {
       <h1 className="text-3xl font-bold text-center">Get coins</h1>
       <p className="text-mist text-center mt-2">
         You have <span className="text-gold font-semibold">{user.coins}</span>{" "}
-        coins · video chat costs {COINS_PER_MIN} coins/minute
+        coins · video chat costs {CALL_RATE} coins/minute
       </p>
 
       <div className="grid sm:grid-cols-3 gap-4 mt-10">
@@ -29,7 +29,7 @@ export default async function CoinsPage() {
             <p className="text-4xl font-extrabold mt-4 text-gold">{p.coins}</p>
             <p className="text-mist text-sm">coins</p>
             <p className="text-mist text-xs mt-2">
-              ≈ {Math.floor(p.coins / COINS_PER_MIN)} minutes of video
+              ≈ {Math.floor(p.coins / CALL_RATE)} minutes of video
             </p>
             <p className="text-2xl font-bold mt-4">₹{p.price}</p>
             <BuyButton packageId={p.id} />

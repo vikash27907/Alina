@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { signToken, TOKEN_COOKIE } from "@/lib/auth";
-import { TRIAL_COINS } from "@/lib/economy";
 
 import { rateLimit, clientIp } from "@/lib/ratelimit";
 
@@ -27,15 +26,14 @@ export async function POST(req: Request) {
   if (exists)
     return NextResponse.json({ error: "That email is already registered." }, { status: 409 });
 
+  // No coin bonus on signup. New users get 1 free trial MINUTE after they
+  // verify a phone number (see Step 3) — this kills fake-account coin farming.
   const user = await db.user.create({
     data: {
       name: String(name).slice(0, 40),
       email: String(email).toLowerCase(),
       password: await bcrypt.hash(String(password), 10),
-      coins: TRIAL_COINS,
-      transactions: {
-        create: { type: "TRIAL", coins: TRIAL_COINS, meta: "signup bonus" },
-      },
+      coins: 0,
     },
   });
 

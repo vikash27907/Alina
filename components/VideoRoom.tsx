@@ -96,7 +96,7 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
       )
     );
     socket.on("wallet", ({ coins }: { coins: number }) => setCoins(coins));
-    socket.on("earned", ({ total }: { total: number }) => setEarned(total));
+    socket.on("earned", ({ totalPaise }: { totalPaise: number }) => setEarned(totalPaise));
 
     socket.on(
       "matched",
@@ -270,8 +270,7 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
           </Link>
         ) : (
           <div className="flex items-center gap-1.5 bg-surface border border-edge rounded-2xl px-3 py-1.5 text-sm">
-            <span className="text-gold">₹</span>
-            <span className="font-semibold">{earned}</span>
+            <span className="font-semibold text-gold">₹{(earned / 100).toFixed(2)}</span>
             <span className="text-mist">this call</span>
           </div>
         )}

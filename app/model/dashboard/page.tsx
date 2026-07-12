@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { MIN_PAYOUT } from "@/lib/economy";
+import { MIN_PAYOUT_PAISE, rupees } from "@/lib/economy";
 import VideoRoom from "@/components/VideoRoom";
 import PayoutForm from "./PayoutForm";
 
@@ -64,8 +64,8 @@ export default async function ModelDashboard() {
       {/* stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
         {[
-          { label: "Balance", value: `₹${profile.balance}` },
-          { label: "Lifetime earnings", value: `₹${profile.earnings}` },
+          { label: "Balance", value: rupees(profile.balance) },
+          { label: "Lifetime earnings", value: rupees(profile.earnings) },
           { label: "Minutes on video", value: profile.totalMinutes },
           { label: "Rating", value: `${profile.rating.toFixed(1)} ★` },
         ].map((s) => (
@@ -81,7 +81,7 @@ export default async function ModelDashboard() {
 
       {/* payouts */}
       <div className="grid md:grid-cols-2 gap-4 mt-8">
-        <PayoutForm balance={profile.balance} minPayout={MIN_PAYOUT} />
+        <PayoutForm balancePaise={profile.balance} minPayoutPaise={MIN_PAYOUT_PAISE} />
         <div className="card p-6">
           <h3 className="font-bold mb-4">Recent payouts</h3>
           {payouts.length === 0 && (
@@ -91,7 +91,7 @@ export default async function ModelDashboard() {
             {payouts.map((p) => (
               <li key={p.id} className="flex items-center justify-between text-sm">
                 <span>
-                  ₹{p.amount} · {p.method}
+                  {rupees(p.amount)} · {p.method}
                 </span>
                 <span
                   className={

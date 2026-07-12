@@ -4,51 +4,60 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function PayoutForm({
-  balance,
-  minPayout,
+  balancePaise,
+  minPayoutPaise,
 }: {
-  balance: number;
-  minPayout: number;
+  balancePaise: number;
+  minPayoutPaise: number;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const balanceRupees = balancePaise / 100;
+  const minRupees = minPayoutPaise / 100;
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setMsg("");
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/model/payout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amount: Number(form.get("amount")),
-        method: form.get("method"),
-        details: form.get("details"),
-      }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    setMsg(res.ok ? "Payout requested ✓" : data.error || "Failed");
-    if (res.ok) router.refresh();
+    try {
+      const res = await fetch("/api/model/payout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountRupees: Number(form.get("amount")),
+          method: form.get("method"),
+          details: form.get("details"),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setBusy(false);
+      setMsg(res.ok ? "Payout requested ✓" : data.error || "Failed");
+      if (res.ok) router.refresh();
+    } catch {
+      setBusy(false);
+      setMsg("Network error — please try again.");
+    }
   }
 
   return (
     <div className="card p-6">
       <h3 className="font-bold mb-1">Withdraw earnings</h3>
       <p className="text-mist text-xs mb-4">
-        Minimum ₹{minPayout}. Processed within 7 days.
+        Minimum ₹{minRupees}. Processed within 7 days. Balance: ₹{balanceRupees.toFixed(2)}
       </p>
       <form onSubmit={submit} className="space-y-3">
         <input
           name="amount"
           type="number"
-          min={minPayout}
-          max={balance}
+          min={minRupees}
+          max={Math.floor(balanceRupees)}
+          step="1"
           required
           className="input-dark"
-          placeholder={`Amount (max ₹${balance})`}
+          placeholder={`Amount in ₹ (max ₹${Math.floor(balanceRupees)})`}
         />
         <select name="method" required className="input-dark">
           <option value="UPI">UPI</option>
@@ -61,7 +70,7 @@ export default function PayoutForm({
           placeholder="UPI ID / bank account details"
         />
         {msg && <p className="text-sm text-gold">{msg}</p>}
-        <button disabled={busy || balance < minPayout} className="btn-exotic w-full">
+        <button disabled={busy || balancePaise < minPayoutPaise} className="btn-exotic w-full">
           {busy ? "Requesting…" : "Request payout"}
         </button>
       </form>

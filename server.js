@@ -30,12 +30,16 @@ if (
   process.exit(1);
 }
 
-const COINS_PER_MIN = 6;
-const MODEL_EARN_PER_MIN = 3; // ₹ per minute
-const TICK_SECONDS = 10; // billing granularity
-const COINS_PER_TICK = COINS_PER_MIN / (60 / TICK_SECONDS); // 1 coin / 10s
-const GIFTS = { rose: 10, kiss: 25, ring: 60, crown: 150 };
-const GIFT_MODEL_SHARE = 0.6;
+// Economy — mirrors lib/economy.ts. Customers pay in coins; models earn paise.
+const CALL_RATE = 10; // coins/min a customer spends
+const MODEL_RATE_PAISE = 300; // ₹3/min to the model
+const LOYALTY_MIN = 10; // from this minute of the same call...
+const LOYALTY_BONUS_PAISE = 100; // ...+₹1/min
+const GIFT_PAYOUT_PCT = 30; // model keeps 30% of a gift's ₹ value
+const GIFTS = { rose: 10, kiss: 25, ring: 100, crown: 500 }; // coin costs
+// Billing cadence. 60s in production; override (e.g. 500) to test fast.
+const BILL_INTERVAL_MS = parseInt(process.env.BILL_INTERVAL_MS || "60000", 10);
+const STALE_CALL_MS = 90_000; // a call with no successful tick in 90s is auto-ended
 
 // ---------- automated content moderation ----------
 // Explicit-content filter for text (English + common Hindi transliterations).
@@ -217,19 +221,10 @@ async function endCall(io, call, reason) {
 
   const seconds = Math.round((Date.now() - call.startedAt) / 1000);
   try {
+    // minutes and money were already persisted per-tick; just close the record
     await prisma.call.update({
       where: { id: call.dbId },
-      data: {
-        endedAt: new Date(),
-        seconds,
-        coinsSpent: call.coinsSpent,
-        modelEarn: call.modelEarn,
-        endReason: reason,
-      },
-    });
-    await prisma.modelProfile.update({
-      where: { id: call.modelProfileId },
-      data: { totalMinutes: { increment: Math.ceil(seconds / 60) } },
+      data: { endedAt: new Date(), seconds, endReason: reason },
     });
   } catch (e) {
     console.error("endCall persist error", e);
@@ -264,6 +259,13 @@ async function startCall(io, customerSocket, modelSocket) {
     },
   });
 
+  const isTrial = !!customerSocket.data.trial;
+  if (isTrial) {
+    await prisma.call
+      .update({ where: { id: dbCall.id }, data: { isTrial: true } })
+      .catch(() => {});
+  }
+
   const call = {
     id: callId,
     dbId: dbCall.id,
@@ -271,10 +273,13 @@ async function startCall(io, customerSocket, modelSocket) {
     customerSocket,
     modelSocket,
     modelProfileId: modelSocket.data.modelProfileId,
+    customerId: customerSocket.data.uid,
+    isTrial,
     startedAt: Date.now(),
+    lastTickAt: Date.now(),
     coinsSpent: 0,
-    modelEarn: 0,
-    ticks: 0,
+    modelEarn: 0, // paise
+    minute: 0,
     timer: null,
   };
   activeCalls.set(callId, call);
@@ -287,56 +292,108 @@ async function startCall(io, customerSocket, modelSocket) {
     callId,
     customer: { name: customerSocket.data.name },
     model: { name: modelSocket.data.name },
-    // customer is the WebRTC initiator
-    initiator: customerSocket.data.uid,
-    coinsPerMin: COINS_PER_MIN,
+    initiator: customerSocket.data.uid, // customer is the WebRTC initiator
+    coinsPerMin: CALL_RATE,
+    trial: isTrial,
   });
 
-  // billing tick: debit customer, credit model; stop when the wallet is empty
-  call.timer = setInterval(async () => {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: customerSocket.data.uid },
-        select: { coins: true },
+  if (isTrial) {
+    // free 1-minute trial: no billing, auto-ends with an upsell after 60s
+    customerSocket.data.trial = false;
+    prisma.user
+      .update({
+        where: { id: call.customerId },
+        data: { trialMinutesLeft: { decrement: 1 } },
+      })
+      .catch((e) => console.error("trial decrement", e));
+    prisma.trialCall
+      .create({
+        data: {
+          userId: call.customerId,
+          modelProfileId: call.modelProfileId,
+          callId: call.dbId,
+        },
+      })
+      .catch((e) => console.error("trialCall record", e));
+    call.timer = setTimeout(() => endCall(io, call, "trial-ended"), 60_000);
+    return;
+  }
+
+  // Paid call: bill one whole minute per interval. Each tick is one atomic DB
+  // transaction, so a crash mid-call loses at most one un-billed minute.
+  call.timer = setInterval(() => billMinute(io, call), BILL_INTERVAL_MS);
+}
+
+async function billMinute(io, call) {
+  const n = call.minute + 1;
+  const credit = MODEL_RATE_PAISE + (n >= LOYALTY_MIN ? LOYALTY_BONUS_PAISE : 0);
+  try {
+    await prisma.$transaction(async (tx) => {
+      // atomic, race-safe debit: only succeeds if the wallet can afford it
+      const debit = await tx.user.updateMany({
+        where: { id: call.customerId, coins: { gte: CALL_RATE } },
+        data: { coins: { decrement: CALL_RATE } },
       });
-      if (!user || user.coins < COINS_PER_TICK) {
-        await endCall(io, call, "out-of-coins");
-        return;
+      if (debit.count === 0) {
+        const err = new Error("OUT_OF_COINS");
+        err.code = "OUT_OF_COINS";
+        throw err;
       }
-      call.ticks += 1;
-      call.coinsSpent += COINS_PER_TICK;
-      const earn =
-        call.ticks % (60 / TICK_SECONDS) === 0 ? MODEL_EARN_PER_MIN : 0;
-      call.modelEarn += earn;
-
-      await prisma.$transaction([
-        prisma.user.update({
-          where: { id: customerSocket.data.uid },
-          data: { coins: { decrement: COINS_PER_TICK } },
-        }),
-        ...(earn
-          ? [
-              prisma.modelProfile.update({
-                where: { id: call.modelProfileId },
-                data: {
-                  earnings: { increment: earn },
-                  balance: { increment: earn },
-                },
-              }),
-            ]
-          : []),
-      ]);
-
-      const updated = await prisma.user.findUnique({
-        where: { id: customerSocket.data.uid },
-        select: { coins: true },
+      await tx.transaction.create({
+        data: {
+          userId: call.customerId,
+          type: "CALL_SPEND",
+          coins: -CALL_RATE,
+          meta: call.dbId,
+        },
       });
-      customerSocket.emit("wallet", { coins: updated?.coins ?? 0 });
-      if (earn) modelSocket.emit("earned", { total: call.modelEarn });
-    } catch (e) {
+      await tx.modelProfile.update({
+        where: { id: call.modelProfileId },
+        data: {
+          earnings: { increment: credit },
+          balance: { increment: credit },
+          totalMinutes: { increment: 1 },
+        },
+      });
+      await tx.modelEarning.create({
+        data: {
+          modelProfileId: call.modelProfileId,
+          type: "call",
+          amountPaise: credit,
+          callId: call.dbId,
+          minuteNo: n,
+        },
+      });
+      await tx.call.update({
+        where: { id: call.dbId },
+        data: {
+          coinsSpent: { increment: CALL_RATE },
+          modelEarn: { increment: credit },
+          minutesBilled: n,
+          seconds: n * 60,
+        },
+      });
+    });
+  } catch (e) {
+    if (e.code === "OUT_OF_COINS") {
+      await endCall(io, call, "out-of-coins");
+    } else {
       console.error("billing tick error", e);
     }
-  }, TICK_SECONDS * 1000);
+    return;
+  }
+
+  call.minute = n;
+  call.coinsSpent += CALL_RATE;
+  call.modelEarn += credit;
+  call.lastTickAt = Date.now();
+
+  const updated = await prisma.user.findUnique({
+    where: { id: call.customerId },
+    select: { coins: true },
+  });
+  call.customerSocket.emit("wallet", { coins: updated?.coins ?? 0 });
+  call.modelSocket.emit("earned", { totalPaise: call.modelEarn, minute: n });
 }
 
 async function isBlocked(a, b) {
@@ -464,12 +521,15 @@ app.prepare().then(() => {
       }
       const user = await prisma.user.findUnique({
         where: { id: socket.data.uid },
-        select: { coins: true },
+        select: { coins: true, trialMinutesLeft: true },
       });
-      if (!user || user.coins < COINS_PER_MIN) {
+      // a free trial minute counts as "can call" even with an empty wallet
+      const canTrial = (user?.trialMinutesLeft ?? 0) > 0;
+      if (!user || (user.coins < CALL_RATE && !canTrial)) {
         socket.emit("error:msg", "You need more coins to start a video chat.");
         return;
       }
+      socket.data.trial = user.coins < CALL_RATE && canTrial;
       waitingCustomers.set(socket.data.uid, socket);
       socket.emit("searching");
       tryMatch(io);
@@ -519,9 +579,9 @@ app.prepare().then(() => {
         socket.emit("error:msg", "Not enough coins for that gift.");
         return;
       }
-      const modelCut = Math.round(cost * GIFT_MODEL_SHARE);
+      const creditPaise = cost * GIFT_PAYOUT_PCT; // 30% of ₹value, in paise
       call.coinsSpent += cost;
-      call.modelEarn += modelCut;
+      call.modelEarn += creditPaise;
       await prisma.$transaction([
         prisma.user.update({
           where: { id: socket.data.uid },
@@ -530,8 +590,16 @@ app.prepare().then(() => {
         prisma.modelProfile.update({
           where: { id: call.modelProfileId },
           data: {
-            earnings: { increment: modelCut },
-            balance: { increment: modelCut },
+            earnings: { increment: creditPaise },
+            balance: { increment: creditPaise },
+          },
+        }),
+        prisma.modelEarning.create({
+          data: {
+            modelProfileId: call.modelProfileId,
+            type: "gift",
+            amountPaise: creditPaise,
+            callId: call.dbId,
           },
         }),
         prisma.transaction.create({
@@ -548,6 +616,7 @@ app.prepare().then(() => {
         select: { coins: true },
       });
       socket.emit("wallet", { coins: updated?.coins ?? 0 });
+      call.modelSocket.emit("earned", { totalPaise: call.modelEarn });
       io.to(call.room).emit("gift:received", { giftId, from: socket.data.name });
     });
 
@@ -730,7 +799,7 @@ app.prepare().then(() => {
         socket.emit("error:msg", "Not enough coins for that gift.");
         return;
       }
-      const modelCut = Math.round(cost * GIFT_MODEL_SHARE);
+      const creditPaise = cost * GIFT_PAYOUT_PCT; // 30% of ₹value, in paise
       await prisma.$transaction([
         prisma.user.update({
           where: { id: socket.data.uid },
@@ -739,8 +808,15 @@ app.prepare().then(() => {
         prisma.modelProfile.update({
           where: { id: room.modelProfileId },
           data: {
-            earnings: { increment: modelCut },
-            balance: { increment: modelCut },
+            earnings: { increment: creditPaise },
+            balance: { increment: creditPaise },
+          },
+        }),
+        prisma.modelEarning.create({
+          data: {
+            modelProfileId: room.modelProfileId,
+            type: "gift",
+            amountPaise: creditPaise,
           },
         }),
         prisma.transaction.create({
@@ -791,6 +867,17 @@ app.prepare().then(() => {
       if (call) endCall(io, call, "disconnected");
     });
   });
+
+  // watchdog: end any paid call that hasn't billed a minute in STALE_CALL_MS
+  // (e.g. a half-dead socket that never fired disconnect)
+  setInterval(() => {
+    const now = Date.now();
+    for (const call of [...activeCalls.values()]) {
+      if (!call.isTrial && now - call.lastTickAt > STALE_CALL_MS + BILL_INTERVAL_MS) {
+        endCall(io, call, "stale");
+      }
+    }
+  }, 30_000).unref?.();
 
   server.listen(port, () => {
     console.log(`funwithu.in ready on http://localhost:${port} (${dev ? "dev" : "prod"})`);
