@@ -21,8 +21,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Minimum payout is ₹${MIN_PAYOUT}.` }, { status: 400 });
   if (amt > user.modelProfile.balance)
     return NextResponse.json({ error: "Amount exceeds your balance." }, { status: 400 });
-  if (!["UPI", "BANK", "PAYPAL", "CRYPTO"].includes(method))
-    return NextResponse.json({ error: "Invalid method." }, { status: 400 });
+  // Only UPI and Indian bank transfer are supported at launch. PayPal/crypto
+  // remain valid enum values in the schema (zero-migration to re-enable later)
+  // but are rejected here — this server check is the real security line.
+  if (!["UPI", "BANK"].includes(method))
+    return NextResponse.json({ error: "That payout method isn't available." }, { status: 400 });
   if (!details || String(details).length < 3)
     return NextResponse.json({ error: "Payment details are required." }, { status: 400 });
 

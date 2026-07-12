@@ -26,7 +26,7 @@ You must not: request or accept payment, gifts or tips outside the Platform from
 
 ## 5. Payouts
 
-5.1 You may request a payout once your balance reaches **₹500**. Payouts are processed within **7 business days** to the UPI/bank/other supported method you nominate. You are responsible for the accuracy of payout details.
+5.1 You may request a payout once your balance reaches **₹500**. Payouts are made by **UPI or Indian bank transfer only** (additional methods may be added in future) and are processed within **7 business days** to the details you nominate. You are responsible for the accuracy of payout details.
 
 5.2 We may withhold or freeze payouts, in whole or part, only: during a good-faith investigation of suspected fraud or material breach (concluded within 60 days unless law-enforcement involvement requires longer); to comply with law or a legal order; or to cover charge-backs under 4.2. Balances not connected to the investigation remain payable. If an investigation clears you, withheld amounts are released promptly.
 

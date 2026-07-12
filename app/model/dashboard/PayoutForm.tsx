@@ -53,14 +53,12 @@ export default function PayoutForm({
         <select name="method" required className="input-dark">
           <option value="UPI">UPI</option>
           <option value="BANK">Bank transfer</option>
-          <option value="PAYPAL">PayPal</option>
-          <option value="CRYPTO">Crypto (USDT)</option>
         </select>
         <input
           name="details"
           required
           className="input-dark"
-          placeholder="UPI ID / account details"
+          placeholder="UPI ID / bank account details"
         />
         {msg && <p className="text-sm text-gold">{msg}</p>}
         <button disabled={busy || balance < minPayout} className="btn-exotic w-full">
