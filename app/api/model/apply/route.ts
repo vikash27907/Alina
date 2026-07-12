@@ -4,17 +4,18 @@ import { db } from "@/lib/db";
 import { signToken, TOKEN_COOKIE } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/ratelimit";
 
-const MAX_FILE = 5 * 1024 * 1024; // 5 MB per image
+const MAX_DATAURL = 7_000_000; // ~5 MB image once base64-encoded
 
-// Verification photos are stored in the database as data URLs. This keeps them
-// off the (ephemeral, per-instance) filesystem so they survive restarts and
-// behave identically on any host. Access stays restricted to admins.
-async function toDataUrl(file: File): Promise<string> {
-  if (file.size > MAX_FILE) throw new Error("Each image must be under 5 MB.");
-  if (!file.type.startsWith("image/"))
-    throw new Error("Only image files are accepted.");
-  const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-  return `data:${file.type};base64,${b64}`;
+// Verification photos arrive as data URLs (captured live from the camera, or
+// uploaded) and are stored in the database. This keeps them off the ephemeral
+// per-instance filesystem so they survive restarts and behave the same on any
+// host. Access stays restricted to admins.
+function validImage(s: unknown): s is string {
+  return (
+    typeof s === "string" &&
+    /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s) &&
+    s.length <= MAX_DATAURL
+  );
 }
 
 export async function POST(req: Request) {
@@ -37,25 +38,32 @@ async function handle(req: Request) {
       { status: 429 }
     );
 
-  const form = await req.formData();
-  const name = String(form.get("name") || "").slice(0, 40);
-  const email = String(form.get("email") || "").toLowerCase();
-  const password = String(form.get("password") || "");
-  const dob = String(form.get("dob") || "");
-  const country = String(form.get("country") || "").slice(0, 60);
-  const languages = String(form.get("languages") || "").slice(0, 120);
-  const adult = form.get("adult");
-  const idDoc = form.get("idDoc");
-  const selfie = form.get("selfie");
+  const body = await req.json().catch(() => null);
+  if (!body)
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+
+  const name = String(body.name || "").slice(0, 40);
+  const email = String(body.email || "").toLowerCase().trim();
+  const password = String(body.password || "");
+  const dob = String(body.dob || "");
+  const country = String(body.country || "").slice(0, 60);
+  const languages = String(body.languages || "").slice(0, 120);
+  const adult = !!body.adult;
+  const idDoc = body.idDoc;
+  const selfie = body.selfie;
 
   if (!name || !email || !password || !dob || !country || !languages)
-    return NextResponse.json({ error: "All fields are required." }, { status: 400 });
+    return NextResponse.json({ error: "Please fill in all the details." }, { status: 400 });
+  if (!/^\S+@\S+\.\S+$/.test(email))
+    return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   if (!adult)
     return NextResponse.json({ error: "You must confirm you are 18+." }, { status: 400 });
   if (password.length < 8)
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
-  if (!(idDoc instanceof File) || !(selfie instanceof File) || idDoc.size === 0 || selfie.size === 0)
-    return NextResponse.json({ error: "Both verification photos are required." }, { status: 400 });
+  if (!validImage(idDoc))
+    return NextResponse.json({ error: "A clear photo of your government ID is required." }, { status: 400 });
+  if (!validImage(selfie))
+    return NextResponse.json({ error: "A live selfie holding your ID is required." }, { status: 400 });
 
   // must be 18+ by date of birth
   const age = (Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000);
@@ -66,14 +74,6 @@ async function handle(req: Request) {
   if (exists)
     return NextResponse.json({ error: "That email is already registered." }, { status: 409 });
 
-  let idDocPath: string, selfiePath: string;
-  try {
-    idDocPath = await toDataUrl(idDoc);
-    selfiePath = await toDataUrl(selfie);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Could not process the images." }, { status: 400 });
-  }
-
   const user = await db.user.create({
     data: {
       name,
@@ -82,7 +82,7 @@ async function handle(req: Request) {
       role: "MODEL",
       coins: 0,
       modelProfile: {
-        create: { country, dob, languages, idDocPath, selfiePath },
+        create: { country, dob, languages, idDocPath: idDoc, selfiePath: selfie },
       },
     },
   });
