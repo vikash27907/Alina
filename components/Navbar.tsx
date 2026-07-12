@@ -49,6 +49,9 @@ export default function Navbar({ user }: { user: NavUser }) {
 
           {user && user.role === "CUSTOMER" && !user.modelStatus && (
             <>
+              <Link href="/room" className="text-mist hover:text-white px-2 hidden sm:block">
+                Couple room
+              </Link>
               <Link href="/support" className="text-mist hover:text-white px-2 hidden sm:block">
                 Support
               </Link>

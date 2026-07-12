@@ -19,6 +19,8 @@ model User {
   phoneVerified  Boolean       @default(false)
   phoneHash      String?       @unique // one phone = one trial (hashed)
   trialMinutesLeft Int         @default(0) // free trial minutes (granted after phone verify)
+  freeRoomsDate  String        @default("") // YYYY-MM-DD (IST) of last free couple room
+  freeRoomsToday Int           @default(0) // free couple rooms used that day
   createdAt      DateTime      @default(now())
   modelProfile   ModelProfile?
   transactions   Transaction[]

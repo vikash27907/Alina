@@ -1,0 +1,30 @@
+{
+  "id": "couple_quiz",
+  "name": "Get to Know You",
+  "cards": [
+    { "text": "What's my guess at your favourite way to relax?", "spice": 1 },
+    { "text": "If we planned a trip together, where would we go first?", "spice": 1 },
+    { "text": "What do you think is my best quality?", "spice": 2 },
+    { "text": "What's a food you could eat every single day?", "spice": 1 },
+    { "text": "Morning person or night owl — and which am I?", "spice": 1 },
+    { "text": "What's your comfort movie or show?", "spice": 1 },
+    { "text": "What's something small that instantly makes your day better?", "spice": 1 },
+    { "text": "If you could master one skill overnight, what would it be?", "spice": 1 },
+    { "text": "What's your go-to karaoke song?", "spice": 1 },
+    { "text": "What's a dream you're still chasing?", "spice": 1 },
+    { "text": "Beach, city, or mountains for a getaway?", "spice": 1 },
+    { "text": "What's the best gift you've ever received?", "spice": 1 },
+    { "text": "What's your ideal lazy Sunday?", "spice": 1 },
+    { "text": "What's a song that reminds you of someone special?", "spice": 2 },
+    { "text": "What's one thing on your bucket list?", "spice": 1 },
+    { "text": "Tea or coffee — and how do you take it?", "spice": 1 },
+    { "text": "What's a hobby you'd love to try together?", "spice": 2 },
+    { "text": "What's your favourite season and why?", "spice": 1 },
+    { "text": "What's the most romantic thing in your opinion?", "spice": 2 },
+    { "text": "What three things would you take to a desert island?", "spice": 1 },
+    { "text": "What's your favourite way to be shown you're appreciated?", "spice": 2 },
+    { "text": "What's a place that feels like home to you?", "spice": 1 },
+    { "text": "What's your happiest childhood memory?", "spice": 1 },
+    { "text": "If tonight were perfect, how would it end?", "spice": 2 }
+  ]
+}

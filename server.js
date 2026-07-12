@@ -42,6 +42,48 @@ const BILL_INTERVAL_MS = parseInt(process.env.BILL_INTERVAL_MS || "60000", 10);
 const STALE_CALL_MS = 90_000; // a call with no successful tick in 90s is auto-ended
 const LIVE_VIEWER_CAP = 6; // max concurrent viewers per live room (WebRTC mesh limit)
 
+// Couple rooms — private 2-person rooms joined by code.
+const FREE_ROOMS_PER_DAY = 1;
+const ROOM_CREATE_COST = 5; // coins
+const ROOM_EXTEND_COST = 10; // coins
+const ROOM_MINUTES = 30;
+const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
+const GAME_DECKS = {
+  truth_dare: require("./content/games/truth_dare.json"),
+  would_you_rather: require("./content/games/would_you_rather.json"),
+  couple_quiz: require("./content/games/couple_quiz.json"),
+};
+
+/** code -> couple room state */
+const coupleRooms = new Map();
+
+function roomCode() {
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () =>
+      ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)]
+    ).join("");
+  } while (coupleRooms.has(code));
+  return code;
+}
+function todayIST() {
+  // YYYY-MM-DD in IST (UTC+5:30)
+  return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function endCoupleRoom(io, code, reason) {
+  const r = coupleRooms.get(code);
+  if (!r) return;
+  coupleRooms.delete(code);
+  clearTimeout(r.expiryTimer);
+  for (const s of [r.creatorSocket, r.guestSocket]) {
+    if (s && s.connected) {
+      s.leave(`room:${code}`);
+      s.data.roomCode = null;
+      s.emit("room:ended", { reason });
+    }
+  }
+}
+
 // ---------- automated content moderation ----------
 // Explicit-content filter for text (English + common Hindi transliterations).
 // Extend this list from the admin side as patterns emerge.
@@ -950,12 +992,217 @@ app.prepare().then(() => {
       }
     }));
 
+    // ---- couple rooms (private 2-person) ----
+    socket.on("room:create", guarded(async () => {
+      const user = await prisma.user.findUnique({
+        where: { id: socket.data.uid },
+        select: { coins: true, freeRoomsDate: true, freeRoomsToday: true },
+      });
+      if (!user) return;
+      const today = todayIST();
+      const usedToday = user.freeRoomsDate === today ? user.freeRoomsToday : 0;
+      const isFree = usedToday < FREE_ROOMS_PER_DAY;
+
+      if (isFree) {
+        await prisma.user.update({
+          where: { id: socket.data.uid },
+          data: { freeRoomsDate: today, freeRoomsToday: usedToday + 1 },
+        });
+      } else {
+        const debit = await prisma.user.updateMany({
+          where: { id: socket.data.uid, coins: { gte: ROOM_CREATE_COST } },
+          data: { coins: { decrement: ROOM_CREATE_COST } },
+        });
+        if (debit.count === 0) {
+          socket.emit("room:error", {
+            message: `You've used today's free room. Creating another costs ${ROOM_CREATE_COST} coins.`,
+          });
+          return;
+        }
+        const u = await prisma.user.findUnique({
+          where: { id: socket.data.uid },
+          select: { coins: true },
+        });
+        socket.emit("wallet", { coins: u?.coins ?? 0 });
+      }
+
+      const code = roomCode();
+      coupleRooms.set(code, {
+        code,
+        creatorUid: socket.data.uid,
+        creatorName: socket.data.name,
+        creatorSocket: socket,
+        guestSocket: null,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + ROOM_MINUTES * 60_000,
+        game: null, // { deckId, used:Set, turnUid }
+        expiryTimer: null,
+      });
+      socket.data.roomCode = code;
+      socket.join(`room:${code}`);
+      socket.emit("room:created", {
+        code,
+        expiresAt: coupleRooms.get(code).expiresAt,
+        free: isFree,
+      });
+    }));
+
+    socket.on("room:join", guarded(({ code } = {}) => {
+      code = String(code || "").toUpperCase().trim();
+      const r = coupleRooms.get(code);
+      if (!r) {
+        socket.emit("room:error", { code: "gone", message: "That room code is invalid or expired." });
+        return;
+      }
+      if (r.guestSocket) {
+        socket.emit("room:error", { code: "full", message: "This room is already full (2 people max)." });
+        return;
+      }
+      if (r.creatorUid === socket.data.uid) {
+        socket.emit("room:error", { message: "You can't join your own room from another tab — share the link with your partner." });
+        return;
+      }
+      // lock the room; the code is now single-use
+      r.guestSocket = socket;
+      r.guestName = socket.data.name;
+      socket.data.roomCode = code;
+      socket.join(`room:${code}`);
+
+      const partnerFor = (uid) => (uid === r.creatorUid ? r.guestName : r.creatorName);
+      // creator is the WebRTC initiator
+      r.creatorSocket.emit("room:ready", {
+        code,
+        partner: r.guestName,
+        initiator: true,
+        expiresAt: r.expiresAt,
+      });
+      socket.emit("room:ready", {
+        code,
+        partner: r.creatorName,
+        initiator: false,
+        expiresAt: r.expiresAt,
+      });
+
+      r.expiryTimer = setTimeout(() => endCoupleRoom(io, code, "expired"), r.expiresAt - Date.now());
+    }));
+
+    // WebRTC signaling relay between the two people in a couple room
+    socket.on("room:signal", (data) => {
+      const code = socket.data.roomCode;
+      if (!code) return;
+      socket.to(`room:${code}`).emit("room:signal", data);
+    });
+
+    socket.on("room:chat", (text) => {
+      const code = socket.data.roomCode;
+      if (!code || typeof text !== "string" || !text.trim()) return;
+      if (isExplicit(text)) {
+        addStrike(io, socket); // moderation applies inside private rooms too
+        return;
+      }
+      io.to(`room:${code}`).emit("room:chat", {
+        from: socket.data.name,
+        self: socket.id,
+        text: text.slice(0, 500),
+      });
+    });
+
+    socket.on("room:extend", guarded(async () => {
+      const code = socket.data.roomCode;
+      const r = code && coupleRooms.get(code);
+      if (!r) return;
+      const debit = await prisma.user.updateMany({
+        where: { id: socket.data.uid, coins: { gte: ROOM_EXTEND_COST } },
+        data: { coins: { decrement: ROOM_EXTEND_COST } },
+      });
+      if (debit.count === 0) {
+        socket.emit("room:error", { message: `You need ${ROOM_EXTEND_COST} coins to extend the room.` });
+        return;
+      }
+      const u = await prisma.user.findUnique({
+        where: { id: socket.data.uid },
+        select: { coins: true },
+      });
+      socket.emit("wallet", { coins: u?.coins ?? 0 });
+      r.expiresAt = Math.max(r.expiresAt, Date.now()) + ROOM_MINUTES * 60_000;
+      clearTimeout(r.expiryTimer);
+      r.expiryTimer = setTimeout(() => endCoupleRoom(io, code, "expired"), r.expiresAt - Date.now());
+      io.to(`room:${code}`).emit("room:extended", { expiresAt: r.expiresAt, by: socket.data.name });
+    }));
+
+    // synced game decks — server is the source of truth for cards & turns
+    socket.on("game:start", ({ deck } = {}) => {
+      const code = socket.data.roomCode;
+      const r = code && coupleRooms.get(code);
+      if (!r || !GAME_DECKS[deck]) return;
+      r.game = { deckId: deck, used: new Set(), turnUid: socket.data.uid };
+      io.to(`room:${code}`).emit("game:started", {
+        deck,
+        name: GAME_DECKS[deck].name,
+        turn: socket.data.uid,
+      });
+    });
+
+    socket.on("game:draw", () => {
+      const code = socket.data.roomCode;
+      const r = code && coupleRooms.get(code);
+      if (!r || !r.game) return;
+      if (r.game.turnUid !== socket.data.uid) return; // only the active player draws
+      const cards = GAME_DECKS[r.game.deckId].cards;
+      const pool = cards.map((_, i) => i).filter((i) => !r.game.used.has(i));
+      if (pool.length === 0) r.game.used.clear();
+      const avail = pool.length ? pool : cards.map((_, i) => i);
+      const idx = avail[Math.floor(Math.random() * avail.length)];
+      r.game.used.add(idx);
+      // alternate turn to the other person
+      r.game.turnUid =
+        socket.data.uid === r.creatorUid ? r.guestSocket?.data.uid : r.creatorUid;
+      io.to(`room:${code}`).emit("game:card", {
+        card: cards[idx],
+        whoseTurn: r.game.turnUid,
+      });
+    });
+
+    socket.on("game:stop", () => {
+      const code = socket.data.roomCode;
+      const r = code && coupleRooms.get(code);
+      if (!r) return;
+      r.game = null;
+      io.to(`room:${code}`).emit("game:stopped");
+    });
+
+    socket.on("room:report", guarded(async ({ reason } = {}) => {
+      const code = socket.data.roomCode;
+      const r = code && coupleRooms.get(code);
+      if (!r || typeof reason !== "string" || !reason.trim()) return;
+      const otherUid =
+        socket.data.uid === r.creatorUid ? r.guestSocket?.data.uid : r.creatorUid;
+      if (!otherUid) return;
+      await prisma.report
+        .create({
+          data: {
+            reporterId: socket.data.uid,
+            reportedId: otherUid,
+            reason: String(reason).slice(0, 100),
+            detail: "reported inside a private couple room",
+          },
+        })
+        .catch((e) => console.error("room report", e));
+      socket.emit("report:ok");
+    }));
+
+    socket.on("room:leave", () => {
+      if (socket.data.roomCode) endCoupleRoom(io, socket.data.roomCode, "left");
+    });
+
     socket.on("disconnect", () => {
       waitingCustomers.delete(socket.data.uid);
       availableModels.delete(socket.data.uid);
       leaveLive(io, socket);
       if (liveRooms.has(socket.data.uid))
         stopLive(io, socket.data.uid, "disconnected");
+      if (socket.data.roomCode)
+        endCoupleRoom(io, socket.data.roomCode, "disconnected");
       const call = activeCalls.get(socket.data.callId);
       if (call) endCall(io, call, "disconnected");
     });

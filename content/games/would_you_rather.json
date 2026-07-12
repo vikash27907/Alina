@@ -1,0 +1,30 @@
+{
+  "id": "would_you_rather",
+  "name": "Would You Rather",
+  "cards": [
+    { "text": "Would you rather have a cosy night in or a wild night out?", "spice": 1 },
+    { "text": "Would you rather be able to read minds or teleport?", "spice": 1 },
+    { "text": "Would you rather a partner who makes you laugh or one who spoils you?", "spice": 1 },
+    { "text": "Would you rather travel the world for a year or have your dream home?", "spice": 1 },
+    { "text": "Would you rather get a good-morning text or a good-night call?", "spice": 2 },
+    { "text": "Would you rather dance in the rain or watch the stars together?", "spice": 2 },
+    { "text": "Would you rather have breakfast in bed or a candlelit dinner?", "spice": 2 },
+    { "text": "Would you rather be adventurous or romantic on a first date?", "spice": 1 },
+    { "text": "Would you rather have a beach holiday or a mountain getaway?", "spice": 1 },
+    { "text": "Would you rather always know the truth or always be surprised?", "spice": 1 },
+    { "text": "Would you rather a slow dance or a road-trip singalong?", "spice": 2 },
+    { "text": "Would you rather get flowers unexpectedly or a heartfelt letter?", "spice": 2 },
+    { "text": "Would you rather have superpowers or unlimited money?", "spice": 1 },
+    { "text": "Would you rather cook together or order in and chill?", "spice": 1 },
+    { "text": "Would you rather a partner who's spontaneous or one who plans everything?", "spice": 1 },
+    { "text": "Would you rather stargaze all night or sleep in till noon together?", "spice": 2 },
+    { "text": "Would you rather be complimented on your smile or your eyes?", "spice": 2 },
+    { "text": "Would you rather relive your best memory or create a new one right now?", "spice": 1 },
+    { "text": "Would you rather have a movie marathon or a game night?", "spice": 1 },
+    { "text": "Would you rather whisper a secret or shout a compliment?", "spice": 2 },
+    { "text": "Would you rather have coffee dates or midnight snack dates?", "spice": 1 },
+    { "text": "Would you rather someone remember your birthday or your favourite song?", "spice": 1 },
+    { "text": "Would you rather a surprise gift or a surprise trip?", "spice": 1 },
+    { "text": "Would you rather hold hands on a walk or cuddle on the couch?", "spice": 2 }
+  ]
+}
