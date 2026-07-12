@@ -33,7 +33,24 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
   const [note, setNote] = useState("");
   const [gifts, setGifts] = useState<FloatingGift[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
   const chatBox = useRef<HTMLDivElement>(null);
+
+  function toggleMic() {
+    const s = localStream.current;
+    if (!s) return;
+    const next = !micOn;
+    s.getAudioTracks().forEach((t) => (t.enabled = next));
+    setMicOn(next);
+  }
+  function toggleCam() {
+    const s = localStream.current;
+    if (!s) return;
+    const next = !camOn;
+    s.getVideoTracks().forEach((t) => (t.enabled = next));
+    setCamOn(next);
+  }
 
   const cleanupCall = useCallback(() => {
     pcRef.current?.close();
@@ -89,6 +106,10 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
         setPartner(role === "customer" ? model.name : customer.name);
 
         const stream = await startMedia();
+        // start each call with mic + camera on
+        stream.getTracks().forEach((t) => (t.enabled = true));
+        setMicOn(true);
+        setCamOn(true);
         const pc = new RTCPeerConnection(ICE);
         pcRef.current = pc;
         stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -319,6 +340,20 @@ export default function VideoRoom({ role, initialCoins = 0 }: Props) {
           {/* in-call controls */}
           {inCall && (
             <div className="absolute bottom-3 left-3 flex gap-2 flex-wrap">
+              <button
+                onClick={toggleMic}
+                title={micOn ? "Mute microphone" : "Unmute microphone"}
+                className={`!px-3 !py-2 ${micOn ? "btn-ghost !bg-night/80" : "btn-exotic"}`}
+              >
+                {micOn ? "🎤" : "🔇"}
+              </button>
+              <button
+                onClick={toggleCam}
+                title={camOn ? "Turn camera off" : "Turn camera on"}
+                className={`!px-3 !py-2 ${camOn ? "btn-ghost !bg-night/80" : "btn-exotic"}`}
+              >
+                {camOn ? "📹" : "🚫"}
+              </button>
               <button onClick={stop} className="btn-ghost !px-4 !py-2 !bg-night/80">
                 ✕ End
               </button>

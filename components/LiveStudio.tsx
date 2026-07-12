@@ -20,7 +20,24 @@ export default function LiveStudio() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [note, setNote] = useState("");
   const [input, setInput] = useState("");
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
   const box = useRef<HTMLDivElement>(null);
+
+  function toggleMic() {
+    const s = streamRef.current;
+    if (!s) return;
+    const next = !micOn;
+    s.getAudioTracks().forEach((t) => (t.enabled = next));
+    setMicOn(next);
+  }
+  function toggleCam() {
+    const s = streamRef.current;
+    if (!s) return;
+    const next = !camOn;
+    s.getVideoTracks().forEach((t) => (t.enabled = next));
+    setCamOn(next);
+  }
 
   useEffect(() => {
     const socket = io({ path: "/rtc" });
@@ -192,7 +209,21 @@ export default function LiveStudio() {
                   👀 {viewers}
                 </span>
               </div>
-              <div className="absolute bottom-3 left-3 flex gap-2">
+              <div className="absolute bottom-3 left-3 flex gap-2 flex-wrap">
+                <button
+                  onClick={toggleMic}
+                  title={micOn ? "Mute microphone" : "Unmute microphone"}
+                  className={`!px-3 !py-2 ${micOn ? "btn-ghost !bg-night/80" : "btn-exotic"}`}
+                >
+                  {micOn ? "🎤" : "🔇"}
+                </button>
+                <button
+                  onClick={toggleCam}
+                  title={camOn ? "Turn camera off" : "Turn camera on"}
+                  className={`!px-3 !py-2 ${camOn ? "btn-ghost !bg-night/80" : "btn-exotic"}`}
+                >
+                  {camOn ? "📹" : "🚫"}
+                </button>
                 <button onClick={stop} className="btn-ghost !px-4 !py-2 !bg-night/80">
                   ⏹ End stream
                 </button>
