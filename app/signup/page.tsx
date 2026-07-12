@@ -43,7 +43,7 @@ export default function Signup() {
     <div className="max-w-md mx-auto pt-16">
       <div className="card p-8">
         <h1 className="text-2xl font-bold">Join FunWithU</h1>
-        <p className="text-mist text-sm mt-1">30 free coins are waiting for you.</p>
+        <p className="text-mist text-sm mt-1">10 free coins are waiting for you.</p>
         <form onSubmit={submit} className="mt-7 space-y-4">
           <div>
             <label className="label">Your name</label>

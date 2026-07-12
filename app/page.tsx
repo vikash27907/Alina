@@ -33,7 +33,7 @@ export default async function Landing() {
           </Link>
         </div>
         <p className="text-mist/70 text-sm mt-4">
-Your first minute is on us — no card needed.
+10 free coins when you join — your first minute is on us.
         </p>
       </section>
 

@@ -26,14 +26,17 @@ export async function POST(req: Request) {
   if (exists)
     return NextResponse.json({ error: "That email is already registered." }, { status: 409 });
 
-  // No coin bonus on signup. New users get 1 free trial MINUTE after they
-  // verify a phone number (see Step 3) — this kills fake-account coin farming.
+  // Small welcome grant: 10 coins ≈ 1 free minute of video to try the product.
+  const SIGNUP_BONUS = 10;
   const user = await db.user.create({
     data: {
       name: String(name).slice(0, 40),
       email: String(email).toLowerCase(),
       password: await bcrypt.hash(String(password), 10),
-      coins: 0,
+      coins: SIGNUP_BONUS,
+      transactions: {
+        create: { type: "TRIAL", coins: SIGNUP_BONUS, meta: "signup bonus" },
+      },
     },
   });
 

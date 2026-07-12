@@ -22,6 +22,7 @@ export default function LiveBrowser({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [watching, setWatching] = useState<{ model: string; vip: boolean; count: number } | null>(null);
+  const [queued, setQueued] = useState<{ model: string; position: number } | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [note, setNote] = useState("");
   const [input, setInput] = useState("");
@@ -34,8 +35,14 @@ export default function LiveBrowser({
     socket.on("connect", () => socket.emit("live:list:get"));
     socket.on("live:list", (list: Room[]) => setRooms(list));
     socket.on("live:joined", (d: any) => {
+      setQueued(null);
       setWatching(d);
       setComments([]);
+      setNote("");
+    });
+    socket.on("live:queued", (d: any) => {
+      cleanup();
+      setQueued(d);
       setNote("");
     });
     socket.on("live:error", ({ message }: any) => setNote(message));
@@ -48,11 +55,18 @@ export default function LiveBrowser({
     );
     socket.on("live:ended", ({ reason }: any) => {
       cleanup();
+      setQueued(null);
       setNote(reason === "moderation" ? "Stream ended by moderation." : "Stream ended.");
     });
-    socket.on("live:kicked", () => {
+    socket.on("live:kicked", ({ reason, message }: any) => {
       cleanup();
-      setNote("The model switched to VIP-only. Buy coins to join VIP streams.");
+      if (reason === "vip-bump") {
+        // server also sends live:queued right after; just show the message
+        setNote(message || "A VIP took your spot — you're back in the queue.");
+      } else {
+        setQueued(null);
+        setNote(message || "The model switched to VIP-only. Buy coins to join VIP streams.");
+      }
     });
     socket.on("live:comment", (c: Comment) =>
       setComments((p) => [...p.slice(-150), c])
@@ -109,12 +123,43 @@ export default function LiveBrowser({
   function leave() {
     socketRef.current?.emit("live:leave");
     cleanup();
+    setQueued(null);
   }
   function sendComment(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
     socketRef.current?.emit("live:comment", input);
     setInput("");
+  }
+
+  if (queued) {
+    return (
+      <div className="max-w-md mx-auto pt-20 text-center">
+        <div className="card p-10">
+          <div className="text-5xl mb-4">🔥</div>
+          <h1 className="text-2xl font-bold">{queued.model}&apos;s room is full</h1>
+          <p className="text-mist mt-3">
+            You&apos;re <span className="text-gold font-bold">#{queued.position}</span> in
+            the queue — we&apos;ll drop you in the moment a spot frees up.
+          </p>
+          {!isPayer && (
+            <p className="text-gold/80 text-sm mt-4">
+              💎 Members with coins skip the queue instantly.
+            </p>
+          )}
+          <div className="flex gap-3 justify-center mt-7">
+            {!isPayer && (
+              <Link href="/coins" className="btn-exotic">
+                Skip the queue
+              </Link>
+            )}
+            <button onClick={leave} className="btn-ghost">
+              Leave queue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (watching) {

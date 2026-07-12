@@ -40,6 +40,7 @@ const GIFTS = { rose: 10, kiss: 25, ring: 100, crown: 500 }; // coin costs
 // Billing cadence. 60s in production; override (e.g. 500) to test fast.
 const BILL_INTERVAL_MS = parseInt(process.env.BILL_INTERVAL_MS || "60000", 10);
 const STALE_CALL_MS = 90_000; // a call with no successful tick in 90s is auto-ended
+const LIVE_VIEWER_CAP = 6; // max concurrent viewers per live room (WebRTC mesh limit)
 
 // ---------- automated content moderation ----------
 // Explicit-content filter for text (English + common Hindi transliterations).
@@ -180,10 +181,61 @@ function stopLive(io, modelUid, reason) {
     v.data.watching = null;
     v.emit("live:ended", { reason });
   }
+  for (const s of room.queue || []) {
+    s.data.queuedIn = null;
+    s.emit("live:ended", { reason });
+  }
   if (room.modelSocket?.connected) room.modelSocket.emit("live:ended", { reason });
   broadcastLiveList(io);
 }
+
+// subscribe a viewer to a room (assumes there is space)
+function admitViewer(io, room, socket) {
+  room.viewers.set(socket.id, socket);
+  socket.data.watching = room.modelUid;
+  socket.data.watchSince = Date.now();
+  room.modelSocket.emit("live:viewer", { sid: socket.id, count: room.viewers.size });
+  socket.emit("live:joined", {
+    model: room.modelName,
+    vip: room.vip,
+    count: room.viewers.size,
+  });
+  broadcastLiveList(io);
+}
+
+function updateQueuePositions(room) {
+  room.queue.forEach((s, i) =>
+    s.emit("live:queued", { model: room.modelName, position: i + 1 })
+  );
+}
+
+// fill free slots from the head of the FIFO queue
+function admitFromQueue(io, room) {
+  while (room.viewers.size < LIVE_VIEWER_CAP && room.queue.length) {
+    const next = room.queue.shift();
+    if (!next || !next.connected) continue;
+    if (room.vip && !next.data.isPayer) {
+      next.data.queuedIn = null;
+      next.emit("live:kicked", { reason: "vip", message: "This stream is now VIP-only." });
+      continue;
+    }
+    next.data.queuedIn = null;
+    admitViewer(io, room, next);
+  }
+  updateQueuePositions(room);
+}
+
 function leaveLive(io, socket) {
+  // remove from any queue first
+  const qm = socket.data.queuedIn;
+  if (qm) {
+    const qr = liveRooms.get(qm);
+    if (qr) {
+      qr.queue = qr.queue.filter((s) => s !== socket);
+      updateQueuePositions(qr);
+    }
+    socket.data.queuedIn = null;
+  }
   const m = socket.data.watching;
   if (!m) return;
   socket.data.watching = null;
@@ -194,6 +246,7 @@ function leaveLive(io, socket) {
     sid: socket.id,
     count: room.viewers.size,
   });
+  admitFromQueue(io, room); // a slot freed → pull the next in line
   broadcastLiveList(io);
 }
 
@@ -696,6 +749,7 @@ app.prepare().then(() => {
         modelSocket: socket,
         vip: !!vip,
         viewers: new Map(),
+        queue: [],
       });
       socket.emit("live:started", { vip: !!vip });
       broadcastLiveList(io);
@@ -708,6 +762,7 @@ app.prepare().then(() => {
       if (!room) return;
       room.vip = !!vip;
       if (room.vip) {
+        // drop free viewers AND free users waiting in the queue
         for (const [sid, v] of [...room.viewers]) {
           if (!v.data.isPayer) {
             room.viewers.delete(sid);
@@ -715,6 +770,14 @@ app.prepare().then(() => {
             v.emit("live:kicked", { reason: "vip" });
           }
         }
+        for (const s of [...room.queue]) {
+          if (!s.data.isPayer) {
+            s.data.queuedIn = null;
+            s.emit("live:kicked", { reason: "vip" });
+          }
+        }
+        room.queue = room.queue.filter((s) => s.data.isPayer);
+        admitFromQueue(io, room); // paying waiters can now come in
         socket.emit("live:viewers", { count: room.viewers.size });
       }
       socket.emit("live:vip:set", { vip: room.vip });
@@ -734,20 +797,50 @@ app.prepare().then(() => {
         });
         return;
       }
-      if (room.viewers.size >= 20) {
-        socket.emit("live:error", { code: "full", message: "This stream is full right now." });
+      leaveLive(io, socket); // clear any previous room/queue membership
+
+      if (room.viewers.size < LIVE_VIEWER_CAP) {
+        admitViewer(io, room, socket);
         return;
       }
-      leaveLive(io, socket);
-      room.viewers.set(socket.id, socket);
-      socket.data.watching = model;
-      room.modelSocket.emit("live:viewer", { sid: socket.id, count: room.viewers.size });
-      socket.emit("live:joined", {
+
+      // Room is full. A paying customer bumps the longest-watching free viewer.
+      if (socket.data.isPayer) {
+        let victim = null;
+        let oldest = Infinity;
+        for (const v of room.viewers.values()) {
+          if (!v.data.isPayer && (v.data.watchSince ?? 0) < oldest) {
+            oldest = v.data.watchSince ?? 0;
+            victim = v;
+          }
+        }
+        if (victim) {
+          room.viewers.delete(victim.id);
+          victim.data.watching = null;
+          room.modelSocket.emit("live:viewer-left", {
+            sid: victim.id,
+            count: room.viewers.size,
+          });
+          admitViewer(io, room, socket);
+          // send the bumped free viewer to the front of the queue
+          room.queue.unshift(victim);
+          victim.data.queuedIn = room.modelUid;
+          victim.emit("live:kicked", {
+            reason: "vip-bump",
+            message: "A VIP took your spot — you're first in the queue.",
+          });
+          updateQueuePositions(room);
+          return;
+        }
+      }
+
+      // Otherwise wait in line (queue is a feature: VIPs skip it).
+      if (!room.queue.includes(socket)) room.queue.push(socket);
+      socket.data.queuedIn = model;
+      socket.emit("live:queued", {
         model: room.modelName,
-        vip: room.vip,
-        count: room.viewers.size,
+        position: room.queue.indexOf(socket) + 1,
       });
-      broadcastLiveList(io);
     });
 
     socket.on("live:leave", () => leaveLive(io, socket));
